@@ -4,32 +4,33 @@ Class containing relevant values and methods for OpenAlex API interaction
 '''
 from time import sleep
 import httpx
-from config.conf import APIEndpoints, PaginationTypes, QueryParams, MAXIMUM_RESULTS_BASIC_PAGINATION
+from httpx_retries import RetryTransport, Retry
+from conf import APIEndpoints, PaginationTypes, QueryParams, MAXIMUM_RESULTS_BASIC_PAGINATION
 from typing import Protocol, Optional
 
 class id_format(Protocol):
     institution_id: str
     # publisher_id: str   # No publisher ID for SFU; using hosted repository information instead.
-    funder_id: Optional[str]
+    funder_id: str
 
 # IDs for relevant institutions SFU + U15
-institution_ids = (
-    id_format('i18014758', 'f4320322551'), # Simon Fraser University
-    id_format('i141945490', 'f4320323180'), # University of British Columbia
-    id_format('i129902397', 'f4320321629'), # Dalhousie University
-    id_format('i154425047', 'f4320319946'), # University of Alberta
-    id_format('i5023651', 'f4320310638'), # McGill University
-    id_format('i98251732', 'f4320311526'), # McMaster University
-    id_format('i125749732', 'f4320322601'), # Western University
-    id_format('i151746483', 'f4320322676'), # University of Waterloo
-    id_format('i70931966', 'f4320323175'), # Université de Montréal
-    id_format('i43406934', 'f4320310137'), # Université Laval
-    id_format('i185261750', 'f4320322015'), # University of Toronto
-    id_format('i168635309', 'f4320310537'), # University of Calgary
-    id_format('i153718931', 'f4320310630'), # University of Ottawa
-    id_format('i204722609', 'f4320321832'), # Queen's University
-    id_format('i46247651', 'f4320311952'), # University of Manitoba
-    id_format('i32625721', 'f4320310865'), # University of Saskatchewan
+institution_ids : tuple[id_format] = (
+    ('i18014758', 'f4320322551'), # Simon Fraser University
+    ('i141945490', 'f4320323180'), # University of British Columbia
+    ('i129902397', 'f4320321629'), # Dalhousie University
+    ('i154425047', 'f4320319946'), # University of Alberta
+    ('i5023651', 'f4320310638'), # McGill University
+    ('i98251732', 'f4320311526'), # McMaster University
+    ('i125749732', 'f4320322601'), # Western University
+    ('i151746483', 'f4320322676'), # University of Waterloo
+    ('i70931966', 'f4320323175'), # Université de Montréal
+    ('i43406934', 'f4320310137'), # Université Laval
+    ('i185261750', 'f4320322015'), # University of Toronto
+    ('i168635309', 'f4320310537'), # University of Calgary
+    ('i153718931', 'f4320310630'), # University of Ottawa
+    ('i204722609', 'f4320321832'), # Queen's University
+    ('i46247651', 'f4320311952'), # University of Manitoba
+    ('i32625721', 'f4320310865'), # University of Saskatchewan
 )
 
 
@@ -72,15 +73,17 @@ class OpenAlexApi(object):
     def retrieve_list(self,
                     endpoint: APIEndpoints,
                     pagination = False,
-                    items_per_page = 50,
+                    items_per_page = 200,
                     pagination_type = PaginationTypes.BASIC,
                     pages_count : Optional[int] = None,
                     page : Optional[int] = None,
                     filter : Optional[str] = None,
                     search : Optional[str] = None,
                     group : Optional[str] = None,
-                    sort : Optional[bool] = None
-                    ) -> httpx.Response:
+                    sort : Optional[bool] = None,
+                    WriteFx : Optional[object] = None,
+                    write_chunk_cutoff = 100
+                    ) -> Optional[httpx.Response]:
         '''
             Send get request to OpenAlex, anticipating a corresponding JSON response for the selected endpoint
             
@@ -89,7 +92,7 @@ class OpenAlexApi(object):
             :param search -- Optional parameter that will retrieve results that contain the parameter in the title, abstract or fulltext 
             :param group  -- Optional parameter that will group results by provided attributes
         '''
-        with httpx.Client() as client:
+        with httpx.Client(transport=RetryTransport()) as client:
             parameters = {}
             if pagination:
                 if items_per_page>200:
@@ -120,29 +123,51 @@ class OpenAlexApi(object):
                     parameters[type] = option                  
 
 
-            res = [send_request(client, 'GET', endpoint, parameters)]            
+            res = [send_request(client, 'GET', endpoint, parameters).json()]            
 
             if pagination and pagination_type is PaginationTypes.CURSOR:
                 # If a supplied number of pages, iterate through until count is reached
-                def find_next_cursor(last_response):
-                    last_json = last_response.json()
+                def find_next_cursor(last_json):
                     if "meta" not in last_json and "next_cursor" not in last_json["meta"]:
                         raise Exception("Next cursor not found in cursor pagination response object")
                     
                     return last_json["meta"]["next_cursor"]
                 
+                next_cursor = find_next_cursor(res[-1])
+
                 if pages_count:
-
-
-                    for _ in range(pages_count-1):
-                        next_cursor=find_next_cursor(res[-1])
+                    for p in range(pages_count-1):
                         if not next_cursor:
                             raise Exception("No next cursor found for cursor pagination")    
+                        content = update_cursor(client, next_cursor, endpoint, parameters).json()
+                        next_cursor=find_next_cursor(res[-1])
+                        if not(next_cursor and "results" in content and len(content["results"])):
+                            raise Exception("Data emptied out before pages could be reached.")
                         
-                        res.append(update_cursor(client, next_cursor, endpoint, parameters))
-                        
+                        res.append(content)
+                        print(f'Collected {p+2} pages.')
                 # If not iterate until no next cursor is given.
                 else:
-                    while (next_cursor:=find_next_cursor(res[-1])):
-                        res.append(update_cursor(client, next_cursor, endpoint, parameters))
-            return res
+                    response_count = 1
+                    total_items = items_per_page
+                    while (next_cursor and "results" in (content := update_cursor(client, next_cursor, endpoint, parameters).json()) and len(content)):
+                        res.append(content)
+                        response_count+=1
+                        total_items += len(content["results"])
+                        next_cursor = find_next_cursor(content)
+                        print(f'Collected {response_count} responses with a total of {total_items} items.')
+
+                        # If the number of paginated responses has hit a set limit, write to disk and continue
+                        if len(res) >= write_chunk_cutoff:
+                            print(f'Chunk cutoff of {write_chunk_cutoff} reached. Writing to disk.')
+                            WriteFx(res)
+                            res.clear()
+                    '''
+                    Keep updating until content next_cursor is empty and results are empty
+                    '''
+            if WriteFx:
+                WriteFx(res)
+                res.clear()
+                return None
+            else:
+                return res

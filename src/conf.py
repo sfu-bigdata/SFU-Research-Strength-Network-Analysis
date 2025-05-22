@@ -1,7 +1,8 @@
 from enum import Enum
+import os.path as path
 BASE_URI = 'https://api.openalex.org/'
 MAXIMUM_RESULTS_BASIC_PAGINATION = 10000
-OUTPUT_RAW_DATA_DIR = 'data/raw/'
+OUTPUT_RAW_DATA_DIR = path.join('data', 'raw')
 
 class APIEndpoints(Enum):
     WORKS = '%s%s' % (BASE_URI, 'works')

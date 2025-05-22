@@ -4,8 +4,7 @@ Tests for the OpenAlex API utility class
 
 import pytest, httpx
 from time import sleep
-from config import conf
-from src import openalex_api
+from src import openalex_api, config as conf
 
 # Ensure that the endpoint urls work
 def test_entities():
@@ -61,13 +60,13 @@ def test_cursor_paging():
 
     assert total_size == items_per_page*requested_number_of_pages    
 
-'''
-Test cursor based pagination on a relatively small dataset
-Country code: MA - Morocco
-May 20 2025 - there should be 178 institutions
-Will effective test if paging successfully terminates when encountering a null value and gets all the results
-'''
 def test_cursor_paging_unrestricted():
+    '''
+    Test cursor based pagination on a relatively small dataset
+    Country code: MA - Morocco
+    May 20 2025 - there should be 178 institutions
+    Will effectively test if paging successfully terminates when encountering a null value and gets all the results
+    '''
     api = openalex_api.OpenAlexApi()
 
     res_set = api.retrieve_list(
