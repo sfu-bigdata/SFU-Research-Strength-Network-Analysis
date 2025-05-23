@@ -1,5 +1,6 @@
 # Ignore the data folder, user can run the application to get data
 data/
+.vscode
 
 # Byte-compiled / optimized / DLL files
 **/__pycache__/

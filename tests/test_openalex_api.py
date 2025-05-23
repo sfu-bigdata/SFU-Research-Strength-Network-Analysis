@@ -4,7 +4,7 @@ Tests for the OpenAlex API utility class
 
 import pytest, httpx
 from time import sleep
-from src import openalex_api, config as conf
+from api import conf, openalex_api
 
 # Ensure that the endpoint urls work
 def test_entities():
@@ -13,7 +13,6 @@ def test_entities():
             res = client.get(endpoint.value)
             assert res.status_code == 200
             sleep(0.1)
-
 
 # Test pagination (Basic)
 def test_basic_paging():
@@ -26,12 +25,9 @@ def test_basic_paging():
         page=10
     )
     assert(len(res)) == 1
-    res = res[-1]
-    assert res.status_code == 200
-    res_json = res.json()    
+    res_json = res[-1]
     assert "results" in res_json
     assert len(res_json["results"])==100 
-
 
 # Test cursor based pagination for a set number of pages
 def test_cursor_paging():
@@ -52,9 +48,7 @@ def test_cursor_paging():
 
     total_size = 0
 
-    for res in res_set:
-        assert res.status_code == 200
-        res_json = res.json()
+    for res_json in res_set:
         assert "meta" and "results" in res_json
         total_size += len(res_json["results"])
 
@@ -79,9 +73,7 @@ def test_cursor_paging_unrestricted():
     
     # At the current time, the total registered institutions is 178
     total_institutions = 0
-    for res in res_set:
-        assert res.status_code == 200
-        res_json = res.json()
+    for res_json in res_set:
         assert "results" in res_json
         total_institutions+=len(res_json["results"])
 
