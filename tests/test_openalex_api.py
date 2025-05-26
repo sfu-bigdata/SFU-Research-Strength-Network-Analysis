@@ -2,7 +2,7 @@
 Tests for the OpenAlex API utility class
 '''
 
-import pytest, httpx
+import httpx
 from time import sleep
 from api import conf, openalex_api
 

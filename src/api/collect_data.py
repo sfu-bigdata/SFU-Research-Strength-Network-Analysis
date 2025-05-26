@@ -13,7 +13,7 @@ class WriteFunctor:
     def __init__(self, path : Path, filename: str):
         self.path = path
         self.filename = filename
-        self.extension = '.zst'
+        self.extension = '.json.zst'
         self.suffix = 1
 
     def __call__(self, data):
@@ -21,7 +21,7 @@ class WriteFunctor:
         #bytes = json.dumps(data).encode('utf-8')
         #compressed_data = zstandard.compress(bytes, level=10)
         self.path.mkdir(parents=True, exist_ok=True)
-        filepath = self.path.joinpath(self.filename+'-'+str(self.suffix)+'.zst')
+        filepath = self.path.joinpath(self.filename+'-'+str(self.suffix)+self.extension)
         print(f'Writing data to directory: {filepath}')
         
         compressor = zstandard.ZstdCompressor()
