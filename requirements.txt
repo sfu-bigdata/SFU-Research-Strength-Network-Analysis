@@ -2,3 +2,5 @@ polars
 httpx
 zstd
 xopen
+pytest
+pytest-dependency

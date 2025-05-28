@@ -4,7 +4,7 @@ Class containing relevant values and methods for OpenAlex API interaction
 '''
 from time import sleep
 import httpx
-from httpx_retries import RetryTransport, Retry
+from httpx_retries import RetryTransport
 from .conf import APIEndpoints, PaginationTypes, QueryParams, MAXIMUM_RESULTS_BASIC_PAGINATION
 from typing import Protocol, Optional
 

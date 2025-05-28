@@ -12,7 +12,7 @@ if __name__ == '__main__':
     directories = [entry for entry in data_dir.iterdir() if entry.is_dir()]
 
     for directory in directories:
-        files = directory.glob('*.json')
+        files = directory.glob('**/*.json')
 
         for file in files:
             with open(file, 'rb') as rf, open(file.with_suffix('.json.zst'), 'wb+') as wf:
