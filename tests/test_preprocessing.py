@@ -25,21 +25,19 @@ def test_multiple_json(input_path: Path):
     for directory in DIRECTORIES:
         ProcessingRaw.load_data(directory, target_dir='multiple')
 
-'''
 @pytest.fixture
 def dataset(input_path: Path) -> dict[str, DataFrame]:
     return ProcessingRaw.load_data(input_path)
 
-#@pytest.mark.dependency(depends=['test_single_json', 'test_multiple_json'])
+@pytest.mark.dependency(depends=['test_single_json', 'test_multiple_json'])
 def test_pruning(dataset: dict[str, DataFrame]):
     for k, v in dataset.items():
-        print(f'k: {k}, v: {v}')
-        dataset[k] = Pruning.pruneData(k, v)
-'''
+        dataset[k] = Pruning.PruningFunction(k).__call__(v)
 
-@pytest.mark.dependency(depends=["test_single_json", "test_multiple_json"])
+@pytest.mark.dependency(depends=["test_single_json", "test_multiple_json", "test_pruning"])
 def test_save_as_parquet(input_path):
     OUTPUT_DIR = input_path.joinpath('..', 'output')
     data = ProcessingRaw.load_data(input_path)
     assert(len(data))
+    data = ProcessingRaw.clean_data(data)
     ProcessingRaw.save_as_parquet(data, OUTPUT_DIR)

@@ -2,6 +2,7 @@ import polars as pl
 from pathlib import Path
 from xopen import xopen
 from typing import Optional
+from .pruning_conf import PruningFunction
 
 def load_data(input_dir: Path, target_dir : Optional[str] = None) -> dict[str, pl.DataFrame]:
     dataframes : dict[str, pl.DataFrame] = {}
@@ -35,7 +36,9 @@ def load_data(input_dir: Path, target_dir : Optional[str] = None) -> dict[str, p
 
 
 def clean_data(data: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
-    pass    
+    for k, v in data.items():
+        data[k] = PruningFunction(k).__call__(v)
+    return data
 
 def save_as_parquet(data, output_path: Path):
     output_path.mkdir(parents=True, exist_ok=True)
