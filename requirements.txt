@@ -4,3 +4,5 @@ zstd
 xopen
 pytest
 pytest-dependency
+neo4j
+dot-env

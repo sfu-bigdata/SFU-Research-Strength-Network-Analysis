@@ -122,7 +122,6 @@ class OpenAlexApi(object):
                 if option:
                     parameters[type] = option                  
 
-
             res = [send_request(client, 'GET', endpoint, parameters).json()]            
 
             if pagination and pagination_type is PaginationTypes.CURSOR:
@@ -150,7 +149,7 @@ class OpenAlexApi(object):
                 else:
                     response_count = 1
                     total_items = items_per_page
-                    while (next_cursor and "results" in (content := update_cursor(client, next_cursor, endpoint, parameters).json()) and len(content)):
+                    while next_cursor and (results := (content := update_cursor(client, next_cursor, endpoint, parameters).json()).get("results", None)) is not None and len(results):
                         res.append(content)
                         response_count+=1
                         total_items += len(content["results"])
@@ -167,7 +166,5 @@ class OpenAlexApi(object):
                     '''
             if WriteFx:
                 WriteFx(res)
-                res.clear()
-                return None
-            else:
-                return res
+                
+            return res

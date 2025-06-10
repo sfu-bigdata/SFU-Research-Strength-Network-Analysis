@@ -1,0 +1,15 @@
+services:
+  neo4j:
+    image: neo4j:5.26.7-community
+    ports:
+      - 7474:7474
+      - 7687:7687
+    restart: 'unless-stopped'
+    environment:
+      - NEO4J_AUTH=none
+      - NEO4J_PLUGINS = ["graph-data-science"]
+    volumes:
+      - ./db/data:/data
+      - ./db/conf:/conf
+      - ./db/logs:/logs
+      - ./db/plugins:/plugins

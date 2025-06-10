@@ -4,7 +4,7 @@ Extract the data from OpenAlex and save in compressed JSON format
 '''
 
 from .openalex_api import OpenAlexApi, APIEndpoints, PaginationTypes, institution_ids
-import json, zstandard, io
+import json, zstandard, io, csv, json
 from pathlib import Path
 from . import conf
 
@@ -24,8 +24,14 @@ class WriteFunctor:
         filepath = self.path.joinpath(self.filename+'-'+str(self.suffix)+self.extension)
         print(f'Writing data to directory: {filepath}')
         
+        '''
+        # Uncompressed
+        with open(self.path.joinpath(self.path, self.filename+'-'+str(self.suffix)+'_raw.json'), 'w') as f:
+            json.dump(data,f)
+        '''
+            
         compressor = zstandard.ZstdCompressor()
-        with open(filepath, 'ab+') as file:
+        with open(filepath, 'ab') as file:
             with compressor.stream_writer(file) as stream_writer:
                 writer = io.TextIOWrapper(stream_writer, encoding='utf-8')
                 json.dump(data, writer)
@@ -125,3 +131,73 @@ def extract(output_path: Path) -> None:
         WriteFx=WriteFunctor(output_path.joinpath('authors'), institution)
     )
     print('Finished collecting author data.')
+
+    # Get all journal data
+    print('Gathering information related to journals.')
+
+    journal_path = conf.INPUTS_DIR.joinpath('api', 'journals.csv')
+    with open(journal_path, 'r') as data:
+        chunk_size = 50
+        csv_reader = csv.reader(data)
+        
+        headers = next(csv_reader) # Title, ISSN
+        
+        issn_collection = []
+        
+        total_length = 0
+
+        def get_data(data_collection, suffix):
+            issn_collection = [issn for (_, issn) in data_collection]
+            filter_query = '|'.join(issn_collection)
+            filter = '%s:%s' % ('issn', filter_query)
+
+            res_set = api.retrieve_list(
+                APIEndpoints.SOURCES,
+                pagination=True,
+                pagination_type=PaginationTypes.CURSOR,
+                filter=filter,
+                WriteFx=WriteFunctor(output_path.joinpath('journals'), 'batch-'+suffix)
+            )
+
+            if res_set and issn_collection:
+
+                for res in res_set:
+                    results = res.get("results", {})
+                    values = set(issn_collection)
+                    
+                    # Check to make sure requested journals there there
+                    if results and values:
+                        issns = []
+
+                        for result in results:
+                            issn = result.get("issn", None)
+                            if issn is not None:
+                                issns.append(issn)
+                        issns = {issn for issnlist in issns for issn in issnlist}
+                        
+                        difference = {
+                            name for (name, issn) in data_collection if issn not in issns 
+                        }
+
+                        if len(difference):
+                            print('Some journals were unable to be retrieved: ')
+                            print(difference, ' ')
+
+                        nonlocal total_length
+                        total_length+=len(results)
+            data_collection.clear()
+
+
+        for idx, (name, issn) in enumerate(csv_reader):
+            issn_collection.append((name, issn))
+            
+            if (idx+1) % chunk_size == 0:
+                get_data(issn_collection, str(idx+1))
+        
+        if issn_collection:
+            get_data(issn_collection, '-final')
+        
+        print(f'Finished collection journal data with {total_length} journals.')
+
+
+    print('Data extraction complete.')

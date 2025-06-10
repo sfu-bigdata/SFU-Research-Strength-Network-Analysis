@@ -1,5 +1,6 @@
 # Ignore the data folder, user can run the application to get data
 data/
+planning/
 .vscode
 
 # Byte-compiled / optimized / DLL files

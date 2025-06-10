@@ -1,8 +1,13 @@
 from enum import Enum
-import os.path as path
+from pathlib import Path
+
+
 BASE_URI = 'https://api.openalex.org/'
 MAXIMUM_RESULTS_BASIC_PAGINATION = 10000
-OUTPUT_RAW_DATA_DIR = path.join('data', 'raw')
+
+BASE_DIR = Path.cwd()
+OUTPUT_RAW_DATA_DIR = BASE_DIR.joinpath('data', 'raw')
+INPUTS_DIR = BASE_DIR.joinpath('inputs')
 
 class APIEndpoints(Enum):
     WORKS = '%s%s' % (BASE_URI, 'works')
@@ -26,6 +31,9 @@ class QueryParams(Enum):
     search = 'search'
     group = 'group_by'
     sort = 'sort'
+
+
+JOURNALS_FILENAME = 'journals.csv'
 
 '''
 def generate_parameter(type: QueryParams, value) -> Optional[str]:
