@@ -7,6 +7,7 @@ MAXIMUM_RESULTS_BASIC_PAGINATION = 10000
 
 BASE_DIR = Path.cwd()
 OUTPUT_RAW_DATA_DIR = BASE_DIR.joinpath('data', 'raw')
+PARQUET_OUTPUT_DIR = BASE_DIR.joinpath('data', 'output')
 INPUTS_DIR = BASE_DIR.joinpath('inputs')
 
 class APIEndpoints(Enum):

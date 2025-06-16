@@ -4,7 +4,7 @@ Configuration to help map out desired fields and types for select OpenAlex objec
 '''
 
 from enum import Enum
-from polars import DataFrame
+from polars import LazyFrame
 import polars as pl
 
 class ObjectFields(Enum):
@@ -98,22 +98,6 @@ class ObjectFields(Enum):
         'works_count',
     )
 
-'''
-def check_and_extract_url(data: DataFrame) -> DataFrame:
-    url_pattern = r'https?://(?:openalex|ror)\.\S+'
-    
-    string_cols = pl.col(pl.String)
-    predicate = string_cols.str.contains(url_pattern)
-
-    data = data.with_columns(
-        pl.when(predicate)
-            .then((string_cols.str.split('/').list.last()))
-            .otherwise(string_cols)
-    )
-
-    return data 
-'''
-
 from typing import Mapping
 def is_composite(item) -> bool:
     return isinstance(item, list) or isinstance(item, Mapping)
@@ -126,7 +110,6 @@ def check_and_extract_url(elements):
 
     elif elements.dtype.is_nested():
         def process_nested(element):
-            print(element)
             if isinstance(element, str):
                 element = element.split('/')[-1]
             elif is_composite(element):
@@ -141,13 +124,13 @@ def check_and_extract_url(elements):
                     
     return elements
 
-def process_strings(data : DataFrame) -> DataFrame:
+def process_strings(data : LazyFrame) -> LazyFrame:
     data = data.select(
         pl.all().map_batches(check_and_extract_url)
     )    
     return data
 
-def flattenStructs(data: DataFrame):
+def flattenStructs(data: LazyFrame):
     # Polars is having some difficulty identfying struct types with the Native API
     keys = [key for key, value in data.schema.items() if value.base_type() is pl.Struct]
     for colName in keys:
@@ -165,42 +148,42 @@ def flattenStructs(data: DataFrame):
 
 class PruningFunction:
     
-    def prunePublishers(data: DataFrame) -> DataFrame:
+    def prunePublishers(data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.publishers.value)
         
         return data
     
-    def pruneAuthors(data: DataFrame) -> DataFrame:
+    def pruneAuthors(data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.authors.value)
         
         return data
 
 
-    def pruneFunders(data: DataFrame) -> DataFrame:
+    def pruneFunders(data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.funders.value)
         
         return data
 
-    def pruneSources(data: DataFrame) -> DataFrame:
+    def pruneSources(data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.sources.value)
         
         return data
 
-    def pruneWorks(data: DataFrame) -> DataFrame:
+    def pruneWorks(data: LazyFrame) -> LazyFrame:
+        print(data.limit(1).collect())
         data = data\
             .select(ObjectFields.works.value)
+        print(data.limit(1).collect())
         
         return data
     
-    def pruneInstitutions(data: DataFrame) -> DataFrame:
+    def pruneInstitutions(data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.institutions.value)
-        #data = flattenStructs(data)
-        data = process_strings(data)
         return data
     
 
@@ -209,12 +192,14 @@ class PruningFunction:
         'funders' : pruneFunders,
         'institutions' : pruneInstitutions,
         'sources' : pruneSources,
+        'journals': pruneSources,
         'works' : pruneWorks,
+        'funded_works': pruneWorks
     }
 
     def __init__(self, identifier: str):
         self.prune = self.pruning_functions.get(identifier, (lambda x: x))
     
-    def __call__(self, data: DataFrame) -> DataFrame:
+    def __call__(self, data: LazyFrame) -> LazyFrame:
         data = self.prune(data)
         return data

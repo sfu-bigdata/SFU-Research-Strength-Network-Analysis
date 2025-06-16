@@ -1,41 +1,32 @@
 import polars as pl
 from pathlib import Path
-from xopen import xopen
 from typing import Optional
 from .pruning_conf import PruningFunction
+from utils import helpers
 
-def load_data(input_dir: Path, target_dir : Optional[str] = None) -> dict[str, pl.DataFrame]:
-    dataframes : dict[str, pl.DataFrame] = {}
+def load_data(input_dir: Path, target_dir : Optional[str] = None) -> dict[str, pl.LazyFrame]:
+    dataframes : dict[str, pl.LazyFrame] = {}
 
     if target_dir:
         child_directories = [Path(input_dir.joinpath(target_dir))]
     else:
         child_directories = [item for item in input_dir.iterdir() if item.is_dir()]
 
+    def process_files(directory: Path, single: bool = False):
+        try:
+            path = directory.joinpath('**/*.json.zst') if not single else directory.joinpath('*/*.json.zst')
+            new_dataframe = pl.scan_ndjson(path)
+            return new_dataframe
+
+        except Exception as e:
+            print(f'Unable to scan files for {directory}')
+
     for directory in child_directories:
-        files = directory.glob('**/*.json.zst')
-        directory_set = None
-        for file in files:
-            with xopen(file, mode='rb') as f:
-                new_dataframe = pl.read_json(f)
-                
-                # If this is part of a multiple page response
-                if "results" in new_dataframe.columns:
-                    new_dataframe = new_dataframe\
-                        .select("results")\
-                        .explode("results")\
-                        .unnest("results")\
-                        .drop('relevance_score')
-                    
-                directory_set = pl.concat((directory_set, new_dataframe), how='diagonal_relaxed') if directory_set is not None else new_dataframe
-        
-        if (directory_set is not None) and (not directory_set.is_empty()):
-            dataframes[directory.name] = directory_set
+        dataframes[directory.name] = process_files(directory)
 
     return dataframes
 
-
-def clean_data(data: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
+def clean_data(data: dict[str, pl.LazyFrame]) -> dict[str, pl.LazyFrame]:
     for k, v in data.items():
         data[k] = PruningFunction(k).__call__(v)
     return data
@@ -44,6 +35,19 @@ def save_as_parquet(data, output_path: Path):
     output_path.mkdir(parents=True, exist_ok=True)
     for k, v in data.items():
         v.write_parquet(Path.joinpath(output_path, k+'.parquet'))
+
+def save_lazyframe_as_parquet(data: dict[str, pl.LazyFrame], output_path: Path):
+    if output_path.exists():
+        helpers.clear_directories(output_path, keepStructure=True)
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    for k, v in data.items():
+        print(f'Saving {k} as parquet.')
+        v.sink_parquet(Path.joinpath(output_path, k+'.parquet'),
+                       maintain_order=False,
+                       row_group_size=1000,
+                       compression='zstd')
 
 def preprocess(
         input_dir: Path,
@@ -58,4 +62,4 @@ def preprocess(
     print('Cleaning Data..')
     data = clean_data(data)
     print(f'Saving data to output directory: {output_path}')
-    save_as_parquet(data, output_path)
+    save_lazyframe_as_parquet(data, output_path)

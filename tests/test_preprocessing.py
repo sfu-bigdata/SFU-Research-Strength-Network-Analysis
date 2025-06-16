@@ -43,55 +43,6 @@ def test_save_as_parquet(input_path):
     data = ProcessingRaw.clean_data(data)
     ProcessingRaw.save_as_parquet(data, OUTPUT_DIR)
 
-'''
-def test_relationship_models_in_common():
-    ldataframe = DataFrame({
-        'apple': [1,2],
-        'banana': [3,4],
-        'cantaloupe':[5,6]
-    })
-
-    rdataframe = DataFrame({
-        'apple': [2,3],
-        'brocolli':[3,4],
-        'carrot':[7,8],
-        'cantaloupe':[5,6]
-    })
-
-    lcols, rcols = set(ldataframe.columns), set(rdataframe.columns)
-    mutual_cols = list(lcols.intersection(rcols))
-
-    # Test normally
-    calculated = Graph.relationship(ldataframe, rdataframe, nodeTypes=(Graph.NodeType.author, Graph.NodeType.funder), in_common=True)
-    
-    expected = DataFrame(
-        data={
-            Graph.NodeType.author.value: mutual_cols,
-            Graph.NodeType.funder.value: mutual_cols
-        },
-        schema=[Graph.NodeType.author.value, Graph.NodeType.funder.value]
-    )
-
-    assert(calculated.equals(expected))
-
-    # When cols are not in the same order
-    calculated = Graph.relationship(rdataframe, ldataframe, nodeTypes=(Graph.NodeType.funder, Graph.NodeType.author), in_common=True)
-    assert(calculated.equals(expected))
-
-    # When nothing is in common
-
-    altdataframe = DataFrame({
-        'zebra': [2,3,4],
-        'maroon': [3,1,2]
-    })
-    calculated = Graph.relationship(altdataframe, rdataframe,
-                                    nodeTypes=(Graph.NodeType.work, Graph.NodeType.institution),
-                                    in_common=True)
-    expected = DataFrame(data={}, schema=[Graph.NodeType.institution.value, Graph.NodeType.work.value])
-
-    assert(calculated.equals(expected))
-'''
-
 def test_relationship_models():
     # Mock Dataframes
     ldataframe = DataFrame({
@@ -120,15 +71,61 @@ def test_relationship_models():
     })
 
     assert(calculated.equals(expected))
-
 def test_node_models():
     # Mock Dataframe
-    dataframe = DataFrame({
+    left = DataFrame({
         'a':['b','c'],
         'd':['e','f'],
         'g':['h','i']
     })
 
+    right =  DataFrame({
+        'x':['g','m'],
+        'y':['j','f'],
+        'z':['f','p']
+    })
+
+    relationships = Graph.Relationships()
+
     calculated = Graph.relationship(
-        
+        left,
+        right,
+        'a',
+        'x',
+        relationships.calculate_relationship(Graph.NodeType.work, Graph.NodeType.source)
     )
+
+    expected = DataFrame({
+        ':END_ID': right.get_column('x').to_list(),
+        ':START_ID': left.get_column('a').to_list(),
+        ':TYPE': relationships.RelationshipTypeMap[(Graph.NodeType.source, Graph.NodeType.work)]
+    })
+
+    assert calculated.equals(expected)
+
+    calculated = Graph.relationship(
+        left,
+        right,
+        'a',
+        'x',
+        relationships.calculate_relationship(Graph.NodeType.author, Graph.NodeType.work)
+    )
+
+    expected = DataFrame({
+        ':END_ID': right.get_column('x').to_list(),
+        ':START_ID': left.get_column('a').to_list(),
+        ':TYPE': relationships.RelationshipTypeMap[(Graph.NodeType.author, Graph.NodeType.work)]
+    })
+
+    assert calculated.equals(expected)
+
+
+    # Should throw an error 
+    with pytest.raises(ValueError):
+        calculated = Graph.relationship(
+            left,
+            right,
+            'a',
+            'x',
+            relationships.calculate_relationship(Graph.NodeType.none, Graph.NodeType.none)
+        )

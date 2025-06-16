@@ -4,7 +4,7 @@ Tests for the OpenAlex API utility class
 
 import httpx
 from time import sleep
-from api import conf, openalex_api
+from api import conf, openalex_api, collect_data
 
 # Ensure that the endpoint urls work
 def test_entities():
@@ -13,6 +13,19 @@ def test_entities():
             res = client.get(endpoint.value)
             assert res.status_code == 200
             sleep(0.1)
+
+def test_retrieve_list():
+    api = openalex_api.OpenAlexApi()
+    ITEMS = 10
+    res = api.retrieve_list(
+        endpoint=conf.APIEndpoints.WORKS,
+        pagination=True,
+        pagination_type=conf.PaginationTypes.BASIC,
+        items_per_page=ITEMS
+    )
+    assert(isinstance(res, list))
+    assert(len(res) and "results" in res[-1])
+    assert(len(res[-1]["results"]) == ITEMS)
 
 # Test pagination (Basic)
 def test_basic_paging():
@@ -55,12 +68,11 @@ def test_cursor_paging():
     assert total_size == items_per_page*requested_number_of_pages    
 
 def test_cursor_paging_unrestricted():
-    '''
-    Test cursor based pagination on a relatively small dataset
-    Country code: MA - Morocco
-    May 20 2025 - there should be 178 institutions
-    Will effectively test if paging successfully terminates when encountering a null value and gets all the results
-    '''
+    # Test cursor based pagination on a relatively small dataset
+    # Country code: MA - Morocco
+    # May 20 2025 - there should be 178 institutions
+    # Will effectively test if paging successfully terminates when encountering a null value and gets all the results
+    
     api = openalex_api.OpenAlexApi()
 
     res_set = api.retrieve_list(
@@ -78,3 +90,19 @@ def test_cursor_paging_unrestricted():
         total_institutions+=len(res_json["results"])
 
     assert total_institutions == 178
+
+def test_convert_json_to_ndjson():
+    sample = [
+        {
+            'apple':'bees'
+        },
+        {
+            'pear':'cat'
+        },
+        {
+            'dog':'rat'
+        }
+    ]
+
+    res = collect_data.convert_json_to_ndjson(sample)
+    assert(res.getvalue() == '{"apple": "bees"}\n{"pear": "cat"}\n{"dog": "rat"}\n')
