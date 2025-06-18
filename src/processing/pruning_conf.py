@@ -11,16 +11,14 @@ class ObjectFields(Enum):
     # For the institution object
     institutions = (
         'id',
-        'ror',
         'display_name',
         'lineage',
-        'repositories',
+        #'repositories',
         'works_count',
         'summary_stats',
         'geo',
         'counts_by_year',
         'topics',
-        'topic_share',
     )
 
     authors = (
@@ -102,88 +100,145 @@ from typing import Mapping
 def is_composite(item) -> bool:
     return isinstance(item, list) or isinstance(item, Mapping)
 
-def check_and_extract_url(elements):
+def check_and_extract_url(expr: pl.Expr)-> pl.Expr:
     url_pattern = r'https?://(?:openalex|ror)\.\S+'
-    if (elements.dtype.base_type() is pl.Utf8 or elements.dtype.base_type() is pl.String)\
-        and (elements.str.contains(url_pattern)).any():
-        elements = elements.str.split('/').list.last()
 
-    elif elements.dtype.is_nested():
-        def process_nested(element):
-            if isinstance(element, str):
-                element = element.split('/')[-1]
-            elif is_composite(element):
-                if isinstance(element, list):
-                    element = [process_nested(e) for e in element]
-                elif isinstance(element, Mapping):
-                    for k, v in element.items():
-                        element[k] = process_nested(v)
-            return element
-        
-        elements = elements.map_elements(process_nested, return_dtype=elements.dtype)
-                    
-    return elements
+    return (
+        pl.when(
+            expr.str.contains(url_pattern)
+        )
+        .then(
+            expr.str.split('/').list.last()
+        )
+        .otherwise(
+            expr
+        )
+    )
 
-def process_strings(data : LazyFrame) -> LazyFrame:
-    data = data.select(
-        pl.all().map_batches(check_and_extract_url)
-    )    
-    return data
-
-def flattenStructs(data: LazyFrame):
-    # Polars is having some difficulty identfying struct types with the Native API
-    keys = [key for key, value in data.schema.items() if value.base_type() is pl.Struct]
-    for colName in keys:
-        data = data.with_columns(
-            data.select(
-                pl.col(colName).name.prefix_fields(
-                    colName+'_'
-                )
-            )
+def clean_nested_string(expr: pl.Expr, type: pl.DataType) -> pl.Expr:
+    if type == pl.String:
+        return check_and_extract_url(expr)
+    
+    elif isinstance(type, pl.List):
+        return expr.list.eval(
+            clean_nested_string(pl.element(), type.inner)
         )
 
-        data = data.unnest(colName)
+    elif isinstance(type, pl.Struct):
+        transforms = []
+        for field in type.fields:
+            struct_expr = clean_nested_string(
+                expr.struct.field(field.name),
+                field.dtype
+            ).alias(field.name)
 
-    return data
+            transforms.append(struct_expr)
+
+        return pl.struct(transforms)
+
+    else:
+        return expr
+
+def process_strings(data: LazyFrame) -> LazyFrame:
+    return data.with_columns(
+        [clean_nested_string(pl.col(name), dtype).alias(name) for name, dtype in data.collect_schema().items()]
+    )
+
 
 class PruningFunction:
-    
-    def prunePublishers(data: LazyFrame) -> LazyFrame:
-        data = data\
-            .select(ObjectFields.publishers.value)
+
+    '''
+    # Add column describing the role of the institution
+    '''
+    columnsFunction = {
+            
+        'lineage': [
+                    pl.when(pl.col('lineage').list.len() > 1)
+                    .then(False)
+                    .otherwise(True)
+                    .alias('lineage_root'),
+
+                    # Replace lineage with a hash
+                    pl.col('lineage').list.sort()
+                    .list.join('')
+                    .hash()
+                    .cast(pl.String)
+        ],
+        # Explode summary stats
+        'summary_stats': [
+            pl.col('summary_stats').struct.unnest()
+        ],
+
+        # Ensure nulls are filled
+        'grants_count': [
+            pl.col('grants_count').fill_null(0)
+        ],
         
+        'country_code': [
+            pl.col('country_code').fill_null('null')
+        ],
+    
+        'apc_usd': [
+            pl.col('apc_usd').fill_null(0)
+        ],
+    
+        'apc_paid': [
+            pl.col('apc_paid').struct.field('value_usd').alias('apc_paid')
+        ],
+
+        'open_access': [
+            pl.col('open_access').struct.field(['is_oa', 'oa_status'])
+        ]
+    }
+        
+    columnsToDrop = {'open_access'}
+
+    def targetedManipulateFields(self, data: LazyFrame) -> LazyFrame:
+        schema = set(data.collect_schema().names())
+        in_common = set(self.columnsFunction.keys()).intersection(schema)
+
+        added_data = data.with_columns(
+            [item for col in in_common for item in self.columnsFunction.get(col)]
+        )
+        
+        to_drop = self.columnsToDrop.intersection(set(added_data.collect_schema().names()))
+        return added_data.drop(to_drop)
+    
+    def prunePublishers(self, data: LazyFrame) -> LazyFrame:
+        data = data\
+            .select(ObjectFields.publishers.value)        
         return data
     
-    def pruneAuthors(data: LazyFrame) -> LazyFrame:
+    def pruneAuthors(self, data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.authors.value)
-        
+
         return data
 
 
-    def pruneFunders(data: LazyFrame) -> LazyFrame:
+    def pruneFunders(self, data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.funders.value)
         
         return data
 
-    def pruneSources(data: LazyFrame) -> LazyFrame:
+    def pruneSources(self, data: LazyFrame) -> LazyFrame:
         data = data\
             .select(ObjectFields.sources.value)
         
+
         return data
 
-    def pruneWorks(data: LazyFrame) -> LazyFrame:
-        print(data.limit(1).collect())
+    def pruneWorks(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.works.value)
-        print(data.limit(1).collect())
+            .select(ObjectFields.works.value)\
         
         return data
     
-    def pruneInstitutions(data: LazyFrame) -> LazyFrame:
+    def pruneInstitutions(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.institutions.value)
+            .select(ObjectFields.institutions.value)\
+            
         return data
     
 
@@ -201,5 +256,12 @@ class PruningFunction:
         self.prune = self.pruning_functions.get(identifier, (lambda x: x))
     
     def __call__(self, data: LazyFrame) -> LazyFrame:
-        data = self.prune(data)
+        data = self.prune(self, data)
+        data = self.targetedManipulateFields(data)
+        data = process_strings(data)
+        data = data.with_columns(
+            pl.selectors.numeric().fill_null(0),
+            pl.selectors.string().fill_null('')
+        )
+
         return data

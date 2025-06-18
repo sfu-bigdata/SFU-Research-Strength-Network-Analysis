@@ -1,8 +1,10 @@
 '''
 '''
-from polars import DataFrame
+import polars as pl
+from polars import LazyFrame
 from typing import Optional
 from enum import Enum
+
 
 class NodeType(Enum):
     institution = 'institution'
@@ -40,12 +42,12 @@ class Relationships():
             return None
 
 def relationship(
-        ldataframe: DataFrame,
-        rdataframe: DataFrame,
+        ldataframe: LazyFrame,
+        rdataframe: LazyFrame,
         l_id : str,
         r_id : str,
         relationshipType: Optional[str]
-) -> DataFrame:
+) -> LazyFrame:
     '''
         Return a dataframe resolving the relationships between two dataframes.
         @param ldataframe The left dataframe to be supplied
@@ -58,9 +60,44 @@ def relationship(
         raise ValueError('No defined relationship type found.')
     
 
-    res = dict()            
+    res = dict()
+    lschema, rschema = ldataframe.collect_schema().names(), rdataframe.collect_schema().names()
+
+    if not (l_id in lschema and r_id in rschema):
+        if l_id not in lschema and r_id not in rschema:
+            raise(f'ID: {l_id} not found in left dataframe, {r_id} not found in right dataframe')
+        if l_id not in lschema:
+            raise(f'ID: {l_id} not found in left dataframe.')
+        if r_id not in rschema:
+            raise(f'ID: {r_id} not found in right dataframe.')
+    
+    # Iterate through the lazyframes
+    '''
     res[':START_ID'] = ldataframe.get_column(l_id).to_list()
     res[':END_ID'] = rdataframe.get_column(r_id).to_list()
     res[':TYPE'] = relationshipType if relationshipType else ''
 
     return DataFrame(data=res, schema=sorted(res.keys()))
+    '''
+    # Temporary Indexes
+    ldataframe_idx = ldataframe.with_columns(
+        pl.int_range(0, pl.len()).alias('_idx')
+    )
+
+    rdataframe_idx = rdataframe.with_columns(
+        pl.int_range(0, pl.len()).alias('_idx')
+    )
+
+    combined = ldataframe_idx.join(
+        other=rdataframe_idx,
+        how="inner",
+        on="_idx"
+    )
+
+    relationshipTable = combined.select(
+        pl.col(l_id).alias(':START_ID'),
+        pl.col(r_id).alias(':END_ID'),
+        pl.lit(relationshipType).alias(':TYPE')
+    )
+
+    return relationshipTable
