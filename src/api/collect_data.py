@@ -127,7 +127,7 @@ def extract(output_path: Path) -> None:
             pagination=True,
             pagination_type = PaginationTypes.CURSOR,
             filter=filter,
-            WriteFx = WriteFunctor(output_path.joinpath('funded_works'), funder)
+            WriteFx = WriteFunctor(output_path.joinpath('works'), funder)
         )
         print(f'Finished gathering funded works for funder: {funder}')
 
@@ -186,7 +186,7 @@ def extract(output_path: Path) -> None:
                 pagination=True,
                 pagination_type=PaginationTypes.CURSOR,
                 filter=filter,
-                WriteFx=WriteFunctor(output_path.joinpath('journals'), 'batch-'+suffix)
+                WriteFx=WriteFunctor(output_path.joinpath('sources'), 'batch-'+suffix)
             )
 
             if res_set and issn_collection:

@@ -4,17 +4,8 @@ import polars as pl
 from polars import LazyFrame
 from typing import Optional
 from enum import Enum
-
-
-class NodeType(Enum):
-    institution = 'institution'
-    author = 'author'
-    funder = 'funder'
-    source = 'source'
-    work = 'work'
-    topic = 'topic'
-    publisher = 'publisher'
-    none = 'none'
+from dataclasses import dataclass
+from .conf import NodeType, GraphTable
 
 class Relationships():
     
@@ -40,13 +31,13 @@ class Relationships():
             return self.RelationshipTypeMap[(right, left)]
         else:
             return None
-
+        
 def relationship(
         ldataframe: LazyFrame,
         rdataframe: LazyFrame,
-        l_id : str,
-        r_id : str,
-        relationshipType: Optional[str]
+        relationshipType: Optional[str],
+        l_id : str = 'id',
+        r_id : str = 'id',
 ) -> LazyFrame:
     '''
         Return a dataframe resolving the relationships between two dataframes.
@@ -101,3 +92,25 @@ def relationship(
     )
 
     return relationshipTable
+
+
+# Provided a collection of data, output relationship tables and node tables
+def generateGraphNodes(
+    data: list[GraphTable]
+) -> tuple[list[GraphTable], list[GraphTable]]:
+    # Iterate through all the tables comparing them against one another
+    relationshipTables = []
+    relationships = Relationships()
+
+    for first in data[:-1]:
+        for second in data[1:]:
+            relationshipType = relationships.calculate_relationship(first.type, second.type)
+            if relationshipType is not None:
+                rtable = relationship(first.data, second.data, relationshipType)
+                relationshipTables.append(GraphTable(name=first.name+'_'+second.name+'_relationship',
+                                                     type=NodeType.relationship, 
+                                                     data=rtable))
+    
+    return (data, relationshipTables)
+    
+

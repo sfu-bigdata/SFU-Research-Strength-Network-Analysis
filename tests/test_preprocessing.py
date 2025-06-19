@@ -5,6 +5,7 @@ import processing.graph as Graph
 from pathlib import Path
 from polars import DataFrame
 
+
 @pytest.fixture
 def input_path():
     from os import path
@@ -34,6 +35,7 @@ def dataset(input_path: Path) -> dict[str, DataFrame]:
 def test_pruning(dataset: dict[str, DataFrame]):
     for k, v in dataset.items():
         dataset[k] = Pruning.PruningFunction(k).__call__(v)
+    return
 
 @pytest.mark.dependency(depends=["test_single_json", "test_multiple_json", "test_pruning"])
 def test_save_as_parquet(input_path):
@@ -42,7 +44,7 @@ def test_save_as_parquet(input_path):
     assert(len(data))
     data = ProcessingRaw.clean_data(data)
     ProcessingRaw.save_as_parquet(data, OUTPUT_DIR)
-
+    
 def test_relationship_models():
     # Mock Dataframes
     ldataframe = DataFrame({
@@ -58,19 +60,22 @@ def test_relationship_models():
     })
 
     calculated = Graph.relationship(
-        ldataframe, rdataframe,
+        ldataframe.lazy(), rdataframe.lazy(),
         l_id = 'aqua',
         r_id = 'onyx',
         relationshipType= 'equals'
     )
 
     expected = DataFrame({
-        ':END_ID': rdataframe.get_column('onyx').to_list(),
         ':START_ID': ldataframe.get_column('aqua').to_list(),
+        ':END_ID': rdataframe.get_column('onyx').to_list(),
         ':TYPE': 'equals'
     })
 
-    assert(calculated.equals(expected))
+    calculated_df = calculated.collect()
+    assert(calculated_df.equals(expected))
+    
+
 def test_node_models():
     # Mock Dataframe
     left = DataFrame({
@@ -88,35 +93,37 @@ def test_node_models():
     relationships = Graph.Relationships()
 
     calculated = Graph.relationship(
-        left,
-        right,
+        left.lazy(),
+        right.lazy(),
+        relationships.calculate_relationship(Graph.NodeType.work, Graph.NodeType.source),
         'a',
-        'x',
-        relationships.calculate_relationship(Graph.NodeType.work, Graph.NodeType.source)
+        'x'
     )
 
     expected = DataFrame({
-        ':END_ID': right.get_column('x').to_list(),
         ':START_ID': left.get_column('a').to_list(),
+        ':END_ID': right.get_column('x').to_list(),
         ':TYPE': relationships.RelationshipTypeMap[(Graph.NodeType.source, Graph.NodeType.work)]
     })
 
+    calculated = calculated.collect()
     assert calculated.equals(expected)
 
     calculated = Graph.relationship(
-        left,
-        right,
+        left.lazy(),
+        right.lazy(),
+        relationships.calculate_relationship(Graph.NodeType.author, Graph.NodeType.work),
         'a',
-        'x',
-        relationships.calculate_relationship(Graph.NodeType.author, Graph.NodeType.work)
+        'x'
     )
 
     expected = DataFrame({
-        ':END_ID': right.get_column('x').to_list(),
         ':START_ID': left.get_column('a').to_list(),
+        ':END_ID': right.get_column('x').to_list(),
         ':TYPE': relationships.RelationshipTypeMap[(Graph.NodeType.author, Graph.NodeType.work)]
     })
 
+    calculated = calculated.collect()
     assert calculated.equals(expected)
 
 

@@ -6,6 +6,7 @@ Configuration to help map out desired fields and types for select OpenAlex objec
 from enum import Enum
 from polars import LazyFrame
 import polars as pl
+from .conf import NodeType, TableMap
 
 class ObjectFields(Enum):
     # For the institution object
@@ -243,25 +244,26 @@ class PruningFunction:
     
 
     pruning_functions = {
-        'authors' : pruneAuthors,
-        'funders' : pruneFunders,
-        'institutions' : pruneInstitutions,
-        'sources' : pruneSources,
-        'journals': pruneSources,
-        'works' : pruneWorks,
-        'funded_works': pruneWorks
+        NodeType.author: pruneAuthors,
+        NodeType.funder: pruneFunders,
+        NodeType.institution: pruneInstitutions,
+        NodeType.source: pruneSources,
+        NodeType.journal: pruneSources,
+        NodeType.work: pruneWorks,
     }
 
-    def __init__(self, identifier: str):
-        self.prune = self.pruning_functions.get(identifier, (lambda x: x))
+    def __init__(self, identifier: NodeType):
+        nodeType = TableMap.get(identifier, None)
+        self.prune = self.pruning_functions.get(nodeType, (lambda x: x))
+        self.nodeType = nodeType
     
-    def __call__(self, data: LazyFrame) -> LazyFrame:
+    def __call__(self, data: LazyFrame) -> tuple[LazyFrame, NodeType]:
         data = self.prune(self, data)
         data = self.targetedManipulateFields(data)
         data = process_strings(data)
         data = data.with_columns(
             pl.selectors.numeric().fill_null(0),
-            pl.selectors.string().fill_null('')
+            pl.selectors.string().fill_null(''),
         )
-
-        return data
+        data = data.unique(subset=['id'], keep='first')
+        return (data, self.nodeType)
