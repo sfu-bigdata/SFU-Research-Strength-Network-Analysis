@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from os import environ
 from dataclasses import dataclass
 from enum import Enum
-from ..processing.conf import NodeType
+from config import NodeType
 
 DatabaseConfig = SimpleNamespace(
     databaseName = 'neo4j',
@@ -34,5 +34,7 @@ ObjectNames = {
     NodeType.topic : GraphObject(prefix='T', name='topic'),
     NodeType.subfield : GraphObject(prefix='SFLD', name='subfield'),
     NodeType.field : GraphObject(prefix='FLD', name='field'),
-    NodeType.domain : GraphObject(prefix='D', name='domain')
+    NodeType.domain : GraphObject(prefix='D', name='domain'),
+    NodeType.geographic : GraphObject(prefix='GEO', name='geographic'),
+    NodeType.affiliated_institution: GraphObject(prefix='AFL_INS', name='affiliated_institution')
 }

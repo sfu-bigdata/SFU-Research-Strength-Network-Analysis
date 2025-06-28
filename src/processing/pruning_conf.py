@@ -6,8 +6,9 @@ Configuration to help map out desired fields and types for select OpenAlex objec
 from enum import Enum
 from polars import LazyFrame
 import polars as pl
-from .conf import NodeType, TableMap, GraphTable, GraphRelationship, GraphDataCollection
+from .conf import GraphTable, GraphRelationship, GraphDataCollection
 from typing import Iterator
+from config import NodeType, TableMap
 
 class ObjectFields(Enum):
     # For the institution object
@@ -25,6 +26,7 @@ class ObjectFields(Enum):
 
     authors = (
         'affiliations',
+        'display_name',
         'cited_by_count',
         'counts_by_year',
         'id',
@@ -35,6 +37,7 @@ class ObjectFields(Enum):
     )
 
     funders = (
+        'display_name',
         'cited_by_count',
         'country_code',
         'counts_by_year',
@@ -49,6 +52,7 @@ class ObjectFields(Enum):
         'cited_by_count',
         'country_code',
         'counts_by_year',
+        'display_name',
         'host_organization',
         'id',
         'is_core',
@@ -64,6 +68,7 @@ class ObjectFields(Enum):
         'authorships',
         'apc_list',
         'apc_paid',
+        'display_name',
         'biblio', # Tentative
         'citation_normalized_percentile',
         # 'cited_by_api_url', # Could potentially be used later to gather information on citations
@@ -88,6 +93,7 @@ class ObjectFields(Enum):
     )
 
     publishers = (
+        'display_name',
         'cited_by_count',
         'country_codes', # Tentative
         'counts_by_year',
@@ -252,8 +258,7 @@ class PruningFunction:
         NodeType.work: pruneWorks,
     }
 
-    def __init__(self, identifier: str):
-        nodeType = TableMap.get(identifier, None)
+    def __init__(self, nodeType: NodeType):
         self.prune = self.pruning_functions.get(nodeType, (lambda x: x))
         self.nodeType = nodeType
     
@@ -313,10 +318,10 @@ class SecondaryInformation():
             .drop_nulls(subset=["id"])
 
         nodes = [
-            GraphTable('topics', NodeType.topic, topics),
-            GraphTable('fields', NodeType.field, fields),
-            GraphTable('subfields', NodeType.subfield, subfields),
-            GraphTable('domains', NodeType.domain, domain)
+            GraphTable(NodeType.topic.value, NodeType.topic, topics),
+            GraphTable(NodeType.field.value, NodeType.field, fields),
+            GraphTable(NodeType.subfield.value, NodeType.subfield, subfields),
+            GraphTable(NodeType.domain.value, NodeType.domain, domain)
         ]
 
         fields_domain =fields.select(
@@ -351,12 +356,56 @@ class SecondaryInformation():
 
         return GraphDataCollection(relationships=relationships, nodes=nodes)
     
-    
     def _deriveAffiliatedInstitutions(originalTable: GraphTable, data:LazyFrame) -> GraphDataCollection:
-        print(originalTable.data.limit(3).collect())
-        print(originalTable.data.limit(3).collect().get_column('affiliations'))
-        originalTable.data = originalTable.data.drop('affiliations')
-        return GraphDataCollection(relationships=[], nodes=[])
+        
+        exploded_institutions = data.select(
+            pl.col('id'),
+            pl.col('affiliations')
+        )\
+            .explode('affiliations')
+        
+        affiliations = exploded_institutions.select(
+            pl.col('affiliations').struct.unnest(),
+            pl.col('id')
+        )
+
+        institutions_nodes = affiliations.select(
+            pl.col('institution').struct.field('id'),
+            pl.col('institution').struct.field('display_name'),
+            pl.col('institution').struct.field('type')
+        ).drop_nulls().unique(keep='first', subset=['id'])
+
+        author_institution_rl = affiliations.select(
+            pl.col('id').alias('author_id'),
+            pl.col('institution').struct.field('id').alias('institution_id'),
+            pl.col('years')
+        ).drop_nulls().unique()
+
+        institutions_geo_rl = affiliations.select(
+            pl.col('institution').struct.field('id').alias('institution_id'),
+            pl.col('institution').struct.field('country_code').alias('country_id')
+        ).drop_nulls().unique()
+
+        # Get the last known institutions and create a relationship table from them, no need to add institution as they should be included in affiliations
+        last_known = data.select(
+            pl.col('id'),
+            pl.col('last_known_institutions')
+        ).explode('last_known_institutions')
+
+        author_last_known_rl = last_known.select(
+            pl.col('id').alias('author_id'),
+            pl.col('last_known_institutions').struct.field('id').alias('last_known_institution_id')
+        )
+
+        originalTable.data = originalTable.data.drop(['affiliations', 'last_known_institutions'])
+
+        return GraphDataCollection(relationships=[
+            GraphRelationship(author_institution_rl, start_type=NodeType.author, target_type=NodeType.affiliated_institution),
+            GraphRelationship(institutions_geo_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.geographic),
+            GraphRelationship(data=author_last_known_rl, start_type=NodeType.author, target_type=NodeType.last_institution)
+        ], nodes=[
+            GraphTable(name=NodeType.affiliated_institution.value, type=NodeType.affiliated_institution, data=institutions_nodes)
+        ])
 
     derivedTables = {
         NodeType.source: [NodeType.topic],
@@ -374,8 +423,9 @@ class SecondaryInformation():
         sublist : list[GraphDataCollection] = []
         
         if (secondary:= self.derivedTables.get(type, None)) is not None:
-            newTable = table.data
+            base = table.data
             for subtable in secondary:
+                newTable = base
                 sublist.append(
                     self.derivedFunctions[subtable](table, newTable)
                 )

@@ -4,10 +4,10 @@ from .conf import DatabaseConfig
 import os
 from ..utils import helpers
 from pathlib import Path
-from ..processing.conf import TableMap, NodeType
 from ..processing.graph import Relationships
 from .conf import ObjectNames
 from .connect import N4J_Connection
+from config import TableMap, NodeType
 
 def db_setup(input_directory: Path, 
              output_directory: Path,
@@ -45,6 +45,10 @@ def load_parquet_into_db(connection: N4J_Connection, node_dir: Path, relationshi
             raise('Unsupported object type - can\'t infer from filename.')
 
         nodeType = (TableMap.get(stem))
+
+        if nodeType not in ObjectNames:
+            raise(f'GraphObjectType not implemented for node type: {nodeType}')
+        
         graphObjectType = ObjectNames.get(nodeType)
 
         print(f'name: {node.name}, graphObject: {graphObjectType}')
@@ -62,9 +66,9 @@ def load_parquet_into_db(connection: N4J_Connection, node_dir: Path, relationshi
         )
         """
 
-        print(query)
-        
         result = connection.execute_cypher_query(query)
 
-        if result._consumed or result.peek() is None:
-            raise Exception(f'Failed to load parquet file for node: {node}')
+        '''
+        print(result)
+        print(result._metadata)
+        '''

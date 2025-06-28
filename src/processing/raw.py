@@ -4,7 +4,8 @@ from typing import Optional
 from .graph import generateGraphNodes
 from .pruning_conf import PruningFunction, SecondaryInformation
 from ..utils import helpers
-from .conf import GraphTable,GraphDataCollection,GraphRelationship
+from .conf import GraphTable,GraphDataCollection,GraphRelationship, designatedDirectories
+from config import GEOGRAPHIC_DATA_LOCATION
 
 
 
@@ -26,15 +27,17 @@ def load_data(input_dir: Path, target_dir : Optional[str] = None) -> dict[str, p
             print(f'Unable to scan files for {directory}')
     
     for directory in child_directories:
-        dataframes[directory.name] = process_files(directory)
+        if directory.name not in designatedDirectories:
+            raise(f'Directory {directory.name} not found in designated directories. Update root config.')
+        dataframes[designatedDirectories[directory.name]] = process_files(directory)
 
     return dataframes
 
 def clean_data(data: dict[str, pl.LazyFrame]) -> list[GraphTable]:
     dataset = []
     for k, v in data.items():
-        pruned_data, type = PruningFunction(k).__call__(v)
-        dataset.append(GraphTable(name=k, type=type, data=pruned_data))
+        pruned_data,type = PruningFunction(k).__call__(v)
+        dataset.append(GraphTable(name=type.value, type=type, data=pruned_data))
 
     return dataset
 
@@ -44,11 +47,11 @@ def generate_secondary_data(GraphTables: list[GraphTable], node_path: Path, rela
         print('Getting derived table information')
         derivedList = secondaryInfo.derive(table)
         print('Saving derived data to disk...')
-        '''
+        
         for data in derivedList:
             save_graphtables_as_parquet(data.nodes, node_path)
             save_relationships_as_parquet(data.relationships, relationship_path)
-        '''
+
 def save_as_parquet(data, output_path: Path):
     output_path.mkdir(parents=True, exist_ok=True)
     for k, v in data.items():
@@ -98,6 +101,23 @@ def save_relationships_as_parquet(data: list[GraphRelationship], output_path: Pa
         
     return
 
+def process_geographic_data(input_path: Path, output_path: Path):
+    if not input_path.exists():
+        raise(f'Geographic data location not found at location: {input_path}')
+    
+    geodata = pl.read_json(input_path)
+    geodata = geodata.unpivot(
+        on=geodata.columns,
+        variable_name="continent",
+        value_name="country"
+    )\
+        .explode('country')\
+        .unnest('country')
+    
+    geodata = geodata.rename({'name':'country_name', 'country_code': 'id'}).unique(keep='first', subset=['id'])
+
+    output_path.mkdir(parents=True, exist_ok=True)
+    geodata.write_parquet(file=output_path.joinpath('geographic.parquet') ,compression='zstd')
 
 def preprocess(
         input_dir: Path,
@@ -118,10 +138,14 @@ def preprocess(
     relationship_path = output_path.joinpath('relationships')
     generate_secondary_data(graphTables, node_path, relationship_path)
     print('Generating relationship tables and node tables.')
-    #nodes, relationships = generateGraphNodes(graphTables)
+    nodes, relationships = generateGraphNodes(graphTables)
     print(f'Saving data to output directory: {output_path}')
     print('Saving nodes...')
-    #save_graphtables_as_parquet(nodes, node_path)
+    save_graphtables_as_parquet(nodes, node_path)
     print('Saving relationships...')
-    #save_graphtables_as_parquet(relationships, relationship_path)
+    save_graphtables_as_parquet(relationships, relationship_path)
     print('Finished writing to disk.')
+
+    print('Adding additional data...')
+    print('Processing geographic information')
+    process_geographic_data(GEOGRAPHIC_DATA_LOCATION, node_path)

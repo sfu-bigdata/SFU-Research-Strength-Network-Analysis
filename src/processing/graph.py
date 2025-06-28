@@ -1,11 +1,8 @@
-'''
-'''
 import polars as pl
 from polars import LazyFrame
 from typing import Optional
-from enum import Enum
-from dataclasses import dataclass
-from .conf import NodeType, GraphTable, GraphRelationship
+from .conf import GraphTable, GraphRelationship
+from config import NodeType
 
 class Relationships():
     
@@ -24,7 +21,8 @@ class Relationships():
         (NodeType.source, NodeType.topic) : 'HAS_TOPIC',
         (NodeType.topic, NodeType.topic) : 'IN_SUBFIELD',
         (NodeType.subfield, NodeType.field) : 'IN_FIELD',
-        (NodeType.field, NodeType.domain) : 'IN_DOMAIN'
+        (NodeType.field, NodeType.domain) : 'IN_DOMAIN',
+        (NodeType.author, NodeType.last_institution) : 'LAST_AFFILIATED_WITH'
     }
 
     def calculate_relationship(self, left: NodeType, right: NodeType) -> Optional[str]:
