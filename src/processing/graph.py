@@ -5,22 +5,26 @@ from polars import LazyFrame
 from typing import Optional
 from enum import Enum
 from dataclasses import dataclass
-from .conf import NodeType, GraphTable
+from .conf import NodeType, GraphTable, GraphRelationship
 
 class Relationships():
     
     RelationshipTypeMap = {
-        (NodeType.author, NodeType.work) : 'authorships',
-        (NodeType.institution, NodeType.institution) : 'parent of',
-        (NodeType.institution, NodeType.author) : 'affiliated with',
-        (NodeType.institution, NodeType.source) : 'hosts',
-        (NodeType.institution, NodeType.funder) : 'can also be',
-        (NodeType.institution, NodeType.publisher) : 'can also be',
-        (NodeType.institution, NodeType.work) : 'authorships',
-        (NodeType.funder, NodeType.work) : 'funds',
-        (NodeType.publisher, NodeType.source) : 'hosts',
-        (NodeType.source, NodeType.work) : 'contains',
-        (NodeType.work, NodeType.topic) : 'affiliated with',
+        (NodeType.author, NodeType.work) : 'AUTHORSHIPS',
+        (NodeType.institution, NodeType.institution) : 'PARENT_OF',
+        (NodeType.institution, NodeType.author) : 'AFFILIATED_WITH',
+        (NodeType.institution, NodeType.source) : 'HOSTS',
+        (NodeType.institution, NodeType.funder) : 'CAN_ALSO_BE',
+        (NodeType.institution, NodeType.publisher) : 'CAN_ALSO_BE',
+        (NodeType.institution, NodeType.work) : 'AUTHORSHIPS',
+        (NodeType.funder, NodeType.work) : 'FUNDS',
+        (NodeType.publisher, NodeType.source) : 'HOSTS',
+        (NodeType.source, NodeType.work) : 'CONTAINS',
+        (NodeType.work, NodeType.topic) : 'HAS_TOPIC',
+        (NodeType.source, NodeType.topic) : 'HAS_TOPIC',
+        (NodeType.topic, NodeType.topic) : 'IN_SUBFIELD',
+        (NodeType.subfield, NodeType.field) : 'IN_FIELD',
+        (NodeType.field, NodeType.domain) : 'IN_DOMAIN'
     }
 
     def calculate_relationship(self, left: NodeType, right: NodeType) -> Optional[str]:
@@ -112,5 +116,15 @@ def generateGraphNodes(
                                                      data=rtable))
     
     return (data, relationshipTables)
+
+def includeRelationshipType(
+        relationship: GraphRelationship
+):
     
+    if (pair := (relationship.start_type, relationship.target_type) in Relationships.RelationshipTypeMap):
+        relationship.data = relationship.data.with_columns(
+            pl.lit(Relationships.RelationshipTypeMap[pair]).alias(":TYPE")
+        )
+    else:
+        raise TypeError(f'Unable to find relationship map for types: {pair}')
 

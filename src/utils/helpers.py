@@ -3,7 +3,7 @@ helpers.py
 Contains helpers functions for usage throughout application, including setup
 '''
 from typing import Optional
-import pathlib, shutil
+import pathlib, shutil, os
 
 # Clear the data output repository for extracting new data
 def removeNested(path: pathlib.Path):
@@ -30,3 +30,11 @@ def clear_directories(
         print('Target directory does not exist.')
     
     return
+
+def move_directories(input_dir : pathlib.Path, output_dir : pathlib.Path):
+    try:
+        shutil.move(input_dir, output_dir)
+    except Exception as e:
+        print(f'ERROR: {e}')
+    
+    print(f'Moved directory data: {input_dir} to {output_dir}')

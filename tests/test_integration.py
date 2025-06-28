@@ -36,9 +36,9 @@ def test_extracted_load(test_load_extracted_dataframes):
         assert not (test_load_extracted_dataframes[directory.name].limit(1).collect().is_empty())
 
 '''
+# Extracted Data -> Cleaning -> Output as Parquet and Relationships + Nodes
 def test_preprocessing():
     INPUT_PATH = pathlib.Path(__file__).parent.joinpath('data', 'raw')
     OUTPUT_PATH = pathlib.Path(__file__).parent.joinpath('data', 'output')
     # Collect the data and save it as parquet
     ProcessingRaw.preprocess(INPUT_PATH, OUTPUT_PATH)
-    pass

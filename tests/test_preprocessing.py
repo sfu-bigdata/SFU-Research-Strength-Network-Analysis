@@ -43,8 +43,8 @@ def test_save_as_parquet(input_path):
     data = ProcessingRaw.load_data(input_path)
     assert(len(data))
     data = ProcessingRaw.clean_data(data)
-    ProcessingRaw.save_as_parquet(data, OUTPUT_DIR)
-    
+    ProcessingRaw.save_graphtables_as_parquet(data, OUTPUT_DIR)
+
 def test_relationship_models():
     # Mock Dataframes
     ldataframe = DataFrame({

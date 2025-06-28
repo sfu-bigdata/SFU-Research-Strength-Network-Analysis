@@ -4,12 +4,16 @@ services:
     ports:
       - 7474:7474
       - 7687:7687
-    restart: 'unless-stopped'
+    restart: 'always'
     environment:
       - NEO4J_AUTH=none
-      - NEO4J_PLUGINS = ["graph-data-science"]
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*,algo.*
+      - NEO4J_PLUGINS=["graph-data-science", "apoc", "apoc-extended"]
     volumes:
       - ./db/data:/data
-      - ./db/conf:/conf
       - ./db/logs:/logs
       - ./db/plugins:/plugins
+      - ./db/imports:/var/lib/neo4j/import

@@ -71,7 +71,8 @@ class WriteFunctor:
                 #file.write(compressed_data)
             self.suffix+=1
         except Exception as e:
-            print(f'Unable to write to file: {filepath}')
+            print(f'Unable to write to file: {filepath}\n{e}')
+            filepath.unlink(missing_ok=True)
 
 def extract(output_path: Path) -> None:
     '''
@@ -239,6 +240,5 @@ def extract(output_path: Path) -> None:
         WriteFx = WriteFunctor(output_path.joinpath('funders'), funder)
     )
     print(f'Finished gathering funded works for funder institutions.')
-
     print('Data extraction complete.')
         

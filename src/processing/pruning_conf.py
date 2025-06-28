@@ -6,7 +6,8 @@ Configuration to help map out desired fields and types for select OpenAlex objec
 from enum import Enum
 from polars import LazyFrame
 import polars as pl
-from .conf import NodeType, TableMap
+from .conf import NodeType, TableMap, GraphTable, GraphRelationship, GraphDataCollection
+from typing import Iterator
 
 class ObjectFields(Enum):
     # For the institution object
@@ -192,7 +193,7 @@ class PruningFunction:
         ]
     }
         
-    columnsToDrop = {'open_access'}
+    columnsToDrop = {'open_access', 'summary_stats'}
 
     def targetedManipulateFields(self, data: LazyFrame) -> LazyFrame:
         schema = set(data.collect_schema().names())
@@ -248,11 +249,10 @@ class PruningFunction:
         NodeType.funder: pruneFunders,
         NodeType.institution: pruneInstitutions,
         NodeType.source: pruneSources,
-        NodeType.journal: pruneSources,
         NodeType.work: pruneWorks,
     }
 
-    def __init__(self, identifier: NodeType):
+    def __init__(self, identifier: str):
         nodeType = TableMap.get(identifier, None)
         self.prune = self.pruning_functions.get(nodeType, (lambda x: x))
         self.nodeType = nodeType
@@ -266,4 +266,119 @@ class PruningFunction:
             pl.selectors.string().fill_null(''),
         )
         data = data.unique(subset=['id'], keep='first')
+
         return (data, self.nodeType)
+    
+class SecondaryInformation():
+    '''
+        Derive additional tables from supplied data tables (topics, affiliations, etc)
+    '''
+    def _deriveTopics(originalTable: GraphTable, data: LazyFrame) -> GraphDataCollection:
+        exploded_topics = data.select(
+            pl.col('topics'),
+            pl.col('id').alias('reference_id')
+        )\
+        .explode('topics')
+
+
+        fields = exploded_topics.select(
+            pl.col("topics").struct.field("field").struct.field("id"),
+            pl.col("topics").struct.field("field").struct.field("display_name"),
+            pl.col("topics").struct.field("domain").struct.field("id").alias("domain_id")
+        )\
+            .unique(subset=["id"])\
+            .drop_nulls(subset=["id"])
+        
+        subfields = exploded_topics.select(
+            pl.col("topics").struct.field("subfield").struct.field("id"),
+            pl.col("topics").struct.field("subfield").struct.field("display_name"),
+            pl.col("topics").struct.field("field").struct.field("id").alias("field_id")
+        )\
+            .unique(subset=["id"])\
+            .drop_nulls(subset=["id"])
+        
+        domain = exploded_topics.select(
+            pl.col("topics").struct.field("domain").struct.field("id"),
+            pl.col("topics").struct.field("domain").struct.field("display_name"),
+        )\
+            .unique(subset=["id"])\
+            .drop_nulls(subset=["id"])
+
+        topics = exploded_topics.select(
+                pl.col("topics").struct.field("id"),
+                pl.col("topics").struct.field("display_name"),
+                pl.col("topics").struct.field("subfield").struct.field("id").alias("subfield_id")
+        )\
+            .unique(subset=["id"])\
+            .drop_nulls(subset=["id"])
+
+        nodes = [
+            GraphTable('topics', NodeType.topic, topics),
+            GraphTable('fields', NodeType.field, fields),
+            GraphTable('subfields', NodeType.subfield, subfields),
+            GraphTable('domains', NodeType.domain, domain)
+        ]
+
+        fields_domain =fields.select(
+            pl.col("id").alias("field_id"),
+            pl.col("domain_id")
+        ).unique().drop_nulls()
+
+        subfields_fields = subfields.select(
+            pl.col("id").alias("subfield_id"),
+            pl.col("field_id")
+        ).unique().drop_nulls()
+
+        topics_subfields = topics.select(
+            pl.col("id").alias("topic_id"),
+            pl.col("subfield_id")
+        ).unique().drop_nulls()
+
+        data_topic = exploded_topics.select(
+            pl.col("reference_id"),
+            pl.col("topics").struct.field("id").alias("topic_id")
+        ).unique().drop_nulls()
+        
+        
+        relationships = [
+            GraphRelationship(fields_domain, NodeType.field, NodeType.domain),
+            GraphRelationship(subfields_fields, NodeType.subfield, NodeType.field),
+            GraphRelationship(topics_subfields, NodeType.topic, NodeType.subfield),
+            GraphRelationship(data_topic, originalTable.type, NodeType.topic)
+        ]
+
+        originalTable.data = originalTable.data.drop('topics')
+
+        return GraphDataCollection(relationships=relationships, nodes=nodes)
+    
+    
+    def _deriveAffiliatedInstitutions(originalTable: GraphTable, data:LazyFrame) -> GraphDataCollection:
+        print(originalTable.data.limit(3).collect())
+        print(originalTable.data.limit(3).collect().get_column('affiliations'))
+        originalTable.data = originalTable.data.drop('affiliations')
+        return GraphDataCollection(relationships=[], nodes=[])
+
+    derivedTables = {
+        NodeType.source: [NodeType.topic],
+        NodeType.author: [NodeType.topic, NodeType.affiliated_institution],
+    }
+
+    derivedFunctions = {
+        NodeType.topic: _deriveTopics,
+        NodeType.affiliated_institution: _deriveAffiliatedInstitutions
+    }
+
+
+    def derive(self, table : GraphTable) -> list[GraphDataCollection]:
+        type = table.type
+        sublist : list[GraphDataCollection] = []
+        
+        if (secondary:= self.derivedTables.get(type, None)) is not None:
+            newTable = table.data
+            for subtable in secondary:
+                sublist.append(
+                    self.derivedFunctions[subtable](table, newTable)
+                )
+            
+
+        return sublist
