@@ -9,7 +9,7 @@ DATABASE_TEST_DATA_INPUT_DIR = BASE_DIR.joinpath('tests','data', 'output')
 GEOGRAPHIC_DATA_LOCATION = BASE_DIR.joinpath('inputs', 'api', 'country_list.json')
 
 class NodeType(Enum):
-    institution = 'institution'
+    SFU_U15_institution = 'SFU_U15_institution'
     author = "author"
     funder = 'funder'
     source = 'source'
@@ -24,12 +24,14 @@ class NodeType(Enum):
     affiliated_institution = 'affiliated_institution'
     geographic = 'geographic'
     last_institution = 'last_institution'
+    related_institution = 'related_institution'
+    authorship = 'authorship'
     none = 'none'
 
 TableMap = {          
     NodeType.author.value : NodeType.author,
     NodeType.funder.value : NodeType.funder,
-    NodeType.institution.value : NodeType.institution,
+    NodeType.SFU_U15_institution.value : NodeType.SFU_U15_institution,
     NodeType.source.value: NodeType.source,
     NodeType.work.value : NodeType.work,
     NodeType.topic.value: NodeType.topic,
@@ -38,5 +40,10 @@ TableMap = {
     NodeType.domain.value: NodeType.domain,
     NodeType.geographic.value: NodeType.geographic,
     NodeType.affiliated_institution.value : NodeType.affiliated_institution,
-    NodeType.last_institution.value : NodeType.last_institution
+    NodeType.last_institution.value : NodeType.last_institution,
+    NodeType.related_institution.value : NodeType.related_institution
 }
+
+GRAPH_START_ID = ':START_ID'
+GRAPH_END_ID = ':END_ID'
+RELATIONSHIP_SEPARATOR = '_'

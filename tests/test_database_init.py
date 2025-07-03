@@ -8,10 +8,9 @@ import src.graphdb.helpers as GraphHelpers
 from src.graphdb.connect import N4J_Connection, ConnectionType
 from src.graphdb.conf import DatabaseConfig, ObjectNames, GraphObject, GraphType
 import pytest
-from src.graphdb.setup import db_setup, load_parquet_into_db
+import src.graphdb.setup as Setup
 import os
 from config import DATABASE_OUTPUT_DIR
-from src.processing.graph import Relationships
 
 @pytest.fixture(scope="session")
 def db_fx_setup():
@@ -20,7 +19,7 @@ def db_fx_setup():
     
     if not file_count:
         try:
-            db_setup()
+            Setup.db_setup()
         except ImportError as e:
             print(f'Error: {e}')
 
@@ -65,12 +64,9 @@ def connection():
     )
     return connection
 
-'''
 @pytest.mark.dependency(depends=['test_bolt_connection'])
 def test_initialization(connection):
     connection.execute_cypher_query(GraphHelpers.CypherQueryCollection.SELECT_ALL_NODES.value)
-'''
-'''
 #@pytest.mark.dependency(depends=['test_bolt_connection'])
 def test_constraints(connection, db_fx_setup):
     for _, graphObject in ObjectNames.items():
@@ -92,7 +88,10 @@ def test_create_relationship_constraints(connection, db_fx_setup):
             set(['id']),
             'IS UNIQUE'
         )
-'''
 
-def test_load_db(connection, db_fx_setup):
-    load_parquet_into_db(connection, DATABASE_OUTPUT_DIR.joinpath('nodes'), DATABASE_OUTPUT_DIR.joinpath('relationships'))
+def test_load_nodes_db(connection, db_fx_setup):
+    Setup.load_nodes_into_db(connection, DATABASE_OUTPUT_DIR.joinpath('nodes')))
+
+
+def test_load_relationships_db(connection, db_fx_setup):
+    Setup.load_relationships_into_db(connection, DATABASE_OUTPUT_DIR.joinpath('relationships'))

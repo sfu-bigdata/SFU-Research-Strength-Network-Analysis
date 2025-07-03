@@ -2,12 +2,13 @@ import polars as pl
 from neo4j import GraphDatabase, Result
 from .conf import DatabaseConfig
 import os
-from ..utils import helpers
+from ..utils.helpers import clear_directories, move_directories
 from pathlib import Path
-from ..processing.graph import Relationships
 from .conf import ObjectNames
 from .connect import N4J_Connection
 from config import TableMap, NodeType
+from .helpers import infer_node_types_from_file
+from .relationships import Relationships
 
 def db_setup(input_directory: Path, 
              output_directory: Path,
@@ -32,11 +33,11 @@ def db_setup(input_directory: Path,
         raise ImportError(f'The target output directory is not empty {output_directory}')
 
     if output_directory.exists() and clear_previous_contents:
-        helpers.clear_directories(output_directory, keepStructure=False)
+        clear_directories(output_directory, keepStructure=False)
 
-    helpers.move_directories(input_directory, output_directory)
+    move_directories(input_directory, output_directory)
 
-def load_parquet_into_db(connection: N4J_Connection, node_dir: Path, relationship_dir: Path):
+def load_nodes_into_db(connection: N4J_Connection, node_dir: Path):
     nodes = node_dir.glob('*.parquet')
 
     for node in nodes:
@@ -51,7 +52,6 @@ def load_parquet_into_db(connection: N4J_Connection, node_dir: Path, relationshi
         
         graphObjectType = ObjectNames.get(nodeType)
 
-        print(f'name: {node.name}, graphObject: {graphObjectType}')
 
         query = f"""
         CALL apoc.periodic.iterate(
@@ -67,8 +67,40 @@ def load_parquet_into_db(connection: N4J_Connection, node_dir: Path, relationshi
         """
 
         result = connection.execute_cypher_query(query)
+        assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
+    
+def load_relationships_into_db(connection: N4J_Connection, relationship_dir: Path):
+    files = relationship_dir.glob('**/*.parquet')
 
-        '''
-        print(result)
-        print(result._metadata)
-        '''
+    RelationshipsGen = Relationships()
+    
+    for file in files:
+        start_node, end_node = infer_node_types_from_file(file)
+        relationshipObj = RelationshipsGen.createRelationshipObject(start_node, end_node)
+
+        query = f"""
+        CALL apoc.periodic.iterate(
+            "CALL apoc.load.parquet ('file:///relationships/{file.name}') YIELD value AS ROW",
+            "
+                WITH ROW,
+                    ROW.`{relationshipObj.origin_id}` AS origin_id,
+                    ROW.`{relationshipObj.target_id}` AS target_id,
+                    apoc.map.clean(ROW, [\\"{relationshipObj.origin_id}\\", \\"{relationshipObj.target_id}\\"], []) as properties
+                
+                MATCH ({relationshipObj.origin_node.prefix}: {relationshipObj.origin_node.name} {{id: origin_id}})
+                MATCH ({relationshipObj.target_node.prefix}: {relationshipObj.target_node.name} {{id: target_id}})
+                MERGE ({relationshipObj.origin_node.prefix})-[r:{relationshipObj.rel_type}]->({relationshipObj.target_node.prefix})
+                ON CREATE SET r = properties
+                ON MATCH SET r += properties
+            ",
+            {{
+                batchSize: 1000,
+                parallel: false,
+                retries: 5
+            }}
+        )
+        """
+
+        result = connection.execute_cypher_query(query)
+        assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
+

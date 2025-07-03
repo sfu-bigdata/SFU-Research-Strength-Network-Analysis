@@ -7,6 +7,7 @@ from .openalex_api import OpenAlexApi, APIEndpoints, PaginationTypes, institutio
 import json, zstandard, io, csv, json
 from pathlib import Path
 from . import conf
+from typing import Iterable, LiteralString
 
 def convert_json_to_ndjson(data: list) -> io.StringIO:
     buffer = io.StringIO()
@@ -19,18 +20,20 @@ def convert_json_to_ndjson(data: list) -> io.StringIO:
 
     return buffer
 
-def convert_json_to_ndjson_chunked(data: list, chunks: int = 1024):
+def convert_json_to_ndjson_chunked(data: list, chunks: int = 1024) -> Iterable[LiteralString]:
     chunked_col = []
+
     for item in data:
         if isinstance(item, dict) and "results" in item:
             item = item["results"]
         for record in item:
             chunked_col.append(json.dumps(record))
             if len(chunked_col) >= chunks:
-                yield '\n'.join(chunked_col)
+                yield '\n'.join(chunked_col)+'\n'
                 chunked_col.clear()
 
     if len(chunked_col):
+        chunked_col.append('\n')
         yield '\n'.join(chunked_col)
 
 # For usage as a functor
@@ -81,17 +84,6 @@ def extract(output_path: Path) -> None:
     '''
     api = OpenAlexApi()
     for (institution, funder) in institution_ids:
-        '''
-        
-        # SFU does not have a publisher id, so this data could be redundant.
-        # Get all published works where the institution is either the host or the parent of the host
-        filter = '%s:%s%s' % ('primary_location.source.publisher_lineage', conf.BASE_URI, institution)
-        publisher_works.append((api.retrieve_list(
-                pagination=True,
-                paginationTypes = PaginationTypes.CURSOR,
-                filter=filter
-        )).json())
-        '''
 
         print(f'Gathering sources for institution: {institution}')
         # Get all hosted sources by institutions (may be better as SFU is not a publisher)
@@ -240,5 +232,16 @@ def extract(output_path: Path) -> None:
         WriteFx = WriteFunctor(output_path.joinpath('funders'), funder)
     )
     print(f'Finished gathering funded works for funder institutions.')
+
+    print(f'Gathering OpenAlex topic data objects.')
+    api.retrieve_list(
+        APIEndpoints.TOPICS,
+        pagination=True,
+        pagination_type=PaginationTypes.CURSOR,
+        select=['id', 'display_name', 'field', 'subfield', 'domain'],
+        WriteFx=WriteFunctor(output_path.joinpath('topics'), 'topics')
+    )
+    print(f'Finished gathering topics objects.')
+
     print('Data extraction complete.')
         

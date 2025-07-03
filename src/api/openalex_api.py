@@ -15,10 +15,10 @@ class id_format(Protocol):
 
 # IDs for relevant institutions SFU + U15
 institution_ids : tuple[id_format] = (
-    ('i18014758', 'f4320322551'), # Simon Fraser University
-    ('i141945490', 'f4320323180'), # University of British Columbia
-    ('i129902397', 'f4320321629'), # Dalhousie University
-    ('i154425047', 'f4320319946'), # University of Alberta
+   # ('i18014758', 'f4320322551'), # Simon Fraser University
+   # ('i141945490', 'f4320323180'), # University of British Columbia
+   # ('i129902397', 'f4320321629'), # Dalhousie University
+   # ('i154425047', 'f4320319946'), # University of Alberta
     ('i5023651', 'f4320310638'), # McGill University
     ('i98251732', 'f4320311526'), # McMaster University
     ('i125749732', 'f4320322601'), # Western University
@@ -36,6 +36,7 @@ institution_ids : tuple[id_format] = (
 
 def send_request(client: httpx.Client, method : str, endpoint : APIEndpoints, parameters : map):
     request = client.build_request(method=method, url=endpoint.value, params=parameters)
+    print(request)
     res = client.send(request)
     if res.status_code != 200:
         raise Exception(f'Error completing GET request:\nStatus Code: {res.status_code}\n{request}', request)
@@ -81,6 +82,7 @@ class OpenAlexApi(object):
                     search : Optional[str] = None,
                     group : Optional[str] = None,
                     sort : Optional[bool] = None,
+                    select: Optional[str] = None,
                     WriteFx : Optional[object] = None,
                     write_chunk_cutoff = 100
                     ) -> Optional[httpx.Response]:
@@ -112,7 +114,11 @@ class OpenAlexApi(object):
                     parameters[QueryParams.page.value] = page
 
             
+            if select:
+                select = ','.join(select)
+
             format_parameters = {
+                QueryParams.select.value : select, 
                 QueryParams.filter.value : filter,
                 QueryParams.search.value : search,
                 QueryParams.group.value : group,
@@ -122,9 +128,10 @@ class OpenAlexApi(object):
                 if option:
                     parameters[type] = option                  
 
-            res = [send_request(client, 'GET', endpoint, parameters).json()]            
+            first = send_request(client, 'GET', endpoint, parameters).json()         
+            res = [first] if "meta" in first and "count" in first["meta"] and first["meta"]["count"] > 0 else []
 
-            if pagination and pagination_type is PaginationTypes.CURSOR:
+            if res and pagination and pagination_type is PaginationTypes.CURSOR:
                 # If a supplied number of pages, iterate through until count is reached
                 def find_next_cursor(last_json):
                     if "meta" not in last_json and "next_cursor" not in last_json["meta"]:
@@ -164,7 +171,8 @@ class OpenAlexApi(object):
                     '''
                     Keep updating until content next_cursor is empty and results are empty
                     '''
-            if WriteFx:
+            
+            if res and WriteFx:
                 WriteFx(res)
                 
             return res

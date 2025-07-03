@@ -28,7 +28,7 @@ class GraphObject:
 ObjectNames = {
     NodeType.author : GraphObject(prefix='A', name='author'),
     NodeType.funder : GraphObject(prefix='F', name='funder'),
-    NodeType.institution : GraphObject(prefix='I', name='institution'),
+    NodeType.SFU_U15_institution : GraphObject(prefix='I', name='sfu_u15_institution'),
     NodeType.source : GraphObject(prefix='S', name='source'),
     NodeType.work : GraphObject(prefix='W', name='work'),
     NodeType.topic : GraphObject(prefix='T', name='topic'),
@@ -36,5 +36,6 @@ ObjectNames = {
     NodeType.field : GraphObject(prefix='FLD', name='field'),
     NodeType.domain : GraphObject(prefix='D', name='domain'),
     NodeType.geographic : GraphObject(prefix='GEO', name='geographic'),
-    NodeType.affiliated_institution: GraphObject(prefix='AFL_INS', name='affiliated_institution')
+    NodeType.affiliated_institution: GraphObject(prefix='AFL_INS', name='affiliated_institution'),
+    NodeType.last_institution: GraphObject(prefix='AFL_INS', name='affiliated_institution')
 }

@@ -23,7 +23,8 @@ class GraphDataCollection:
 designatedDirectories = {
     'authors': NodeType.author,
     'funders': NodeType.funder,
-    'institutions': NodeType.institution,
+    'institutions': NodeType.SFU_U15_institution,
     'sources': NodeType.source,
-    'works': NodeType.work
+    'works': NodeType.work,
+    'topics': NodeType.topic
 }

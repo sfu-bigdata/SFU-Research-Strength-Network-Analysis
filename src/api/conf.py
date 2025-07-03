@@ -32,6 +32,7 @@ class QueryParams(Enum):
     search = 'search'
     group = 'group_by'
     sort = 'sort'
+    select = 'select'
 
 
 JOURNALS_FILENAME = 'journals.csv'

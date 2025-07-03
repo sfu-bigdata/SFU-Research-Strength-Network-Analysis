@@ -8,27 +8,26 @@ from polars import LazyFrame
 import polars as pl
 from .conf import GraphTable, GraphRelationship, GraphDataCollection
 from typing import Iterator
-from config import NodeType, TableMap
+from config import NodeType, TableMap, GRAPH_START_ID, GRAPH_END_ID
 
 class ObjectFields(Enum):
     # For the institution object
-    institutions = (
+    institution= (
         'id',
         'display_name',
         'lineage',
-        #'repositories',
         'works_count',
         'summary_stats',
-        'geo',
         'counts_by_year',
-        'topics',
+        #'topics',
+        'topic_share',
+        'associated_institutions'
     )
 
-    authors = (
+    author = (
         'affiliations',
         'display_name',
         'cited_by_count',
-        'counts_by_year',
         'id',
         'last_known_institutions',
         'summary_stats',
@@ -36,7 +35,7 @@ class ObjectFields(Enum):
         'topics',
     )
 
-    funders = (
+    funder = (
         'display_name',
         'cited_by_count',
         'country_code',
@@ -47,7 +46,7 @@ class ObjectFields(Enum):
         'works_count'
     )
 
-    sources = (
+    source = (
         'apc_usd',
         'cited_by_count',
         'country_code',
@@ -64,35 +63,26 @@ class ObjectFields(Enum):
         'topics'
     )
 
-    works = (
+    work = (
         'authorships',
-        'apc_list',
         'apc_paid',
         'display_name',
-        'biblio', # Tentative
         'citation_normalized_percentile',
-        # 'cited_by_api_url', # Could potentially be used later to gather information on citations
         'cited_by_count',
-        'concepts',
-        'corresponding_author_ids',
-        'corresponding_institution_ids',
         'countries_distinct_count',
         'counts_by_year',
         'fwci',
-        'grants',
+        #'grants',
         'id',
         'institutions_distinct_count',
-        'keywords',
-        'language',
-        'locations',
         'publication_date',
-        'referenced_works',
+        #'referenced_works',
         'topics',
         'type',
         'open_access'
     )
 
-    publishers = (
+    publisher = (
         'display_name',
         'cited_by_count',
         'country_codes', # Tentative
@@ -104,6 +94,23 @@ class ObjectFields(Enum):
         'works_count',
     )
 
+    topic = (
+        'id',
+        'display_name',
+        'subfield',
+        'field',
+        'domain'
+    )
+
+NodeTypeToFields = {
+    NodeType.SFU_U15_institution: ObjectFields.institution,
+    NodeType.author: ObjectFields.author,
+    NodeType.funder: ObjectFields.funder,
+    NodeType.source: ObjectFields.source,
+    NodeType.publisher: ObjectFields.publisher,
+    NodeType.topic: ObjectFields.topic,
+    NodeType.work: ObjectFields.work
+}
 from typing import Mapping
 def is_composite(item) -> bool:
     return isinstance(item, list) or isinstance(item, Mapping)
@@ -159,19 +166,14 @@ class PruningFunction:
     # Add column describing the role of the institution
     '''
     columnsFunction = {
-            
+        
         'lineage': [
                     pl.when(pl.col('lineage').list.len() > 1)
                     .then(False)
                     .otherwise(True)
                     .alias('lineage_root'),
-
-                    # Replace lineage with a hash
-                    pl.col('lineage').list.sort()
-                    .list.join('')
-                    .hash()
-                    .cast(pl.String)
         ],
+
         # Explode summary stats
         'summary_stats': [
             pl.col('summary_stats').struct.unnest()
@@ -194,6 +196,10 @@ class PruningFunction:
             pl.col('apc_paid').struct.field('value_usd').alias('apc_paid')
         ],
 
+        'citation_normalized_percentile': [
+            pl.col('citation_normalized_percentile').struct.field('value').alias('citation_normalized_percentile')
+        ],
+
         'open_access': [
             pl.col('open_access').struct.field(['is_oa', 'oa_status'])
         ]
@@ -210,52 +216,59 @@ class PruningFunction:
         )
         
         to_drop = self.columnsToDrop.intersection(set(added_data.collect_schema().names()))
+        
         return added_data.drop(to_drop)
     
     def prunePublishers(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.publishers.value)        
+            .select(ObjectFields.publisher.value)        
         return data
     
     def pruneAuthors(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.authors.value)
+            .select(ObjectFields.author.value)
 
         return data
 
 
     def pruneFunders(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.funders.value)
+            .select(ObjectFields.funder.value)
         
         return data
 
     def pruneSources(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.sources.value)
+            .select(ObjectFields.source.value)
         
 
         return data
 
     def pruneWorks(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.works.value)\
+            .select(ObjectFields.work.value)\
         
         return data
     
     def pruneInstitutions(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.institutions.value)\
+            .select(ObjectFields.institution.value)\
             
         return data
     
-
+    def pruneTopics(self, data:LazyFrame) -> LazyFrame:
+        data = data\
+            .select(ObjectFields.topic.value)
+        
+        return data
+    
     pruning_functions = {
         NodeType.author: pruneAuthors,
         NodeType.funder: pruneFunders,
-        NodeType.institution: pruneInstitutions,
+        NodeType.SFU_U15_institution: pruneInstitutions,
         NodeType.source: pruneSources,
         NodeType.work: pruneWorks,
+        NodeType.topic: pruneTopics,
     }
 
     def __init__(self, nodeType: NodeType):
@@ -266,10 +279,12 @@ class PruningFunction:
         data = self.prune(self, data)
         data = self.targetedManipulateFields(data)
         data = process_strings(data)
+        
         data = data.with_columns(
             pl.selectors.numeric().fill_null(0),
             pl.selectors.string().fill_null(''),
         )
+        
         data = data.unique(subset=['id'], keep='first')
 
         return (data, self.nodeType)
@@ -278,83 +293,91 @@ class SecondaryInformation():
     '''
         Derive additional tables from supplied data tables (topics, affiliations, etc)
     '''
-    def _deriveTopics(originalTable: GraphTable, data: LazyFrame) -> GraphDataCollection:
-        exploded_topics = data.select(
-            pl.col('topics'),
-            pl.col('id').alias('reference_id')
-        )\
-        .explode('topics')
+    def _deriveTopicHierarchy(originaTable: GraphTable, data: LazyFrame) -> GraphDataCollection:
 
+        subfield_nodes = data.select(
+            pl.col('subfield')
+        ).unnest('subfield')\
+        .drop_nulls()\
+        .unique(keep='first', subset=['id'])
 
-        fields = exploded_topics.select(
-            pl.col("topics").struct.field("field").struct.field("id"),
-            pl.col("topics").struct.field("field").struct.field("display_name"),
-            pl.col("topics").struct.field("domain").struct.field("id").alias("domain_id")
-        )\
-            .unique(subset=["id"])\
-            .drop_nulls(subset=["id"])
+        field_nodes = data.select(
+            pl.col('field')
+        ).unnest('field')\
+        .drop_nulls()\
+        .unique(keep='first', subset=['id'])
         
-        subfields = exploded_topics.select(
-            pl.col("topics").struct.field("subfield").struct.field("id"),
-            pl.col("topics").struct.field("subfield").struct.field("display_name"),
-            pl.col("topics").struct.field("field").struct.field("id").alias("field_id")
-        )\
-            .unique(subset=["id"])\
-            .drop_nulls(subset=["id"])
-        
-        domain = exploded_topics.select(
-            pl.col("topics").struct.field("domain").struct.field("id"),
-            pl.col("topics").struct.field("domain").struct.field("display_name"),
-        )\
-            .unique(subset=["id"])\
-            .drop_nulls(subset=["id"])
+        domain_nodes = data.select(
+            pl.col('domain')
+        ).unnest('domain')\
+        .drop_nulls()\
+        .unique(keep='first', subset=['id'])
 
-        topics = exploded_topics.select(
-                pl.col("topics").struct.field("id"),
-                pl.col("topics").struct.field("display_name"),
-                pl.col("topics").struct.field("subfield").struct.field("id").alias("subfield_id")
-        )\
-            .unique(subset=["id"])\
-            .drop_nulls(subset=["id"])
+        topic_subfield_rl = data.select(
+            pl.col('id').alias(GRAPH_START_ID),
+            pl.col('subfield').struct.field('id').alias(GRAPH_END_ID)
+        ).drop_nulls().unique()
+
+        subfield_field_rl = data.select(
+            pl.col('subfield').struct.field('id').alias(GRAPH_START_ID),
+            pl.col('field').struct.field('id').alias(GRAPH_END_ID)    
+        ).drop_nulls().unique()
+
+        field_domain_rl = data.select(
+            pl.col('field').struct.field('id').alias(GRAPH_START_ID),
+            pl.col('domain').struct.field('id').alias(GRAPH_END_ID)
+        ).drop_nulls().unique()
 
         nodes = [
-            GraphTable(NodeType.topic.value, NodeType.topic, topics),
-            GraphTable(NodeType.field.value, NodeType.field, fields),
-            GraphTable(NodeType.subfield.value, NodeType.subfield, subfields),
-            GraphTable(NodeType.domain.value, NodeType.domain, domain)
+            GraphTable(NodeType.field.value, NodeType.field, field_nodes),
+            GraphTable(NodeType.subfield.value, NodeType.subfield, subfield_nodes),
+            GraphTable(NodeType.domain.value, NodeType.domain, domain_nodes)
         ]
 
-        fields_domain =fields.select(
-            pl.col("id").alias("field_id"),
-            pl.col("domain_id")
-        ).unique().drop_nulls()
-
-        subfields_fields = subfields.select(
-            pl.col("id").alias("subfield_id"),
-            pl.col("field_id")
-        ).unique().drop_nulls()
-
-        topics_subfields = topics.select(
-            pl.col("id").alias("topic_id"),
-            pl.col("subfield_id")
-        ).unique().drop_nulls()
-
-        data_topic = exploded_topics.select(
-            pl.col("reference_id"),
-            pl.col("topics").struct.field("id").alias("topic_id")
-        ).unique().drop_nulls()
-        
-        
         relationships = [
-            GraphRelationship(fields_domain, NodeType.field, NodeType.domain),
-            GraphRelationship(subfields_fields, NodeType.subfield, NodeType.field),
-            GraphRelationship(topics_subfields, NodeType.topic, NodeType.subfield),
+            GraphRelationship(topic_subfield_rl, start_type=NodeType.topic, target_type=NodeType.subfield),
+            GraphRelationship(subfield_field_rl, start_type=NodeType.subfield, target_type=NodeType.field),
+            GraphRelationship(field_domain_rl, start_type=NodeType.field, target_type=NodeType.domain)
+        ]
+
+        originaTable.data = data.select(
+            pl.col('id'),
+            pl.col('display_name')
+        )
+
+        return GraphDataCollection(
+            nodes=nodes,
+            relationships=relationships
+            )
+
+    def _deriveTopicRelationships(originalTable: GraphTable, data: LazyFrame) -> GraphDataCollection:
+        fields = NodeTypeToFields[originalTable.type].value
+
+        select = []
+        if 'topics' in fields:
+            select.append('topics')
+        if 'topic_share' in fields:
+            select.append('topic_share')
+
+        exploded_topics = data.select(
+            pl.col(select),
+            pl.col('id').alias(GRAPH_START_ID)
+        )\
+        .explode(select)\
+        .unnest(select)
+
+        exploded_topics = exploded_topics.drop(['display_name', 'subfield', 'field', 'domain'])
+
+        data_topic = exploded_topics.rename({
+            'id':GRAPH_END_ID
+        }).unique().drop_nulls()
+
+        relationships = [
             GraphRelationship(data_topic, originalTable.type, NodeType.topic)
         ]
 
-        originalTable.data = originalTable.data.drop('topics')
-
-        return GraphDataCollection(relationships=relationships, nodes=nodes)
+        originalTable.data = originalTable.data.drop(select)
+        return GraphDataCollection(relationships=relationships, nodes=[])
     
     def _deriveAffiliatedInstitutions(originalTable: GraphTable, data:LazyFrame) -> GraphDataCollection:
         
@@ -376,14 +399,14 @@ class SecondaryInformation():
         ).drop_nulls().unique(keep='first', subset=['id'])
 
         author_institution_rl = affiliations.select(
-            pl.col('id').alias('author_id'),
-            pl.col('institution').struct.field('id').alias('institution_id'),
+            pl.col('id').alias(GRAPH_START_ID),
+            pl.col('institution').struct.field('id').alias(GRAPH_END_ID),
             pl.col('years')
         ).drop_nulls().unique()
 
         institutions_geo_rl = affiliations.select(
-            pl.col('institution').struct.field('id').alias('institution_id'),
-            pl.col('institution').struct.field('country_code').alias('country_id')
+            pl.col('institution').struct.field('id').alias(GRAPH_START_ID),
+            pl.col('institution').struct.field('country_code').alias(GRAPH_END_ID)
         ).drop_nulls().unique()
 
         # Get the last known institutions and create a relationship table from them, no need to add institution as they should be included in affiliations
@@ -393,8 +416,8 @@ class SecondaryInformation():
         ).explode('last_known_institutions')
 
         author_last_known_rl = last_known.select(
-            pl.col('id').alias('author_id'),
-            pl.col('last_known_institutions').struct.field('id').alias('last_known_institution_id')
+            pl.col('id').alias(GRAPH_START_ID),
+            pl.col('last_known_institutions').struct.field('id').alias(GRAPH_END_ID)
         )
 
         originalTable.data = originalTable.data.drop(['affiliations', 'last_known_institutions'])
@@ -407,14 +430,121 @@ class SecondaryInformation():
             GraphTable(name=NodeType.affiliated_institution.value, type=NodeType.affiliated_institution, data=institutions_nodes)
         ])
 
+    def _deriveLineage(originalTable: GraphTable, data:LazyFrame) -> GraphDataCollection:
+        '''
+        Return a relationship table with 
+        base_institution_id -> reference institution id
+        related_institution_id -> another insituttion in the lineage
+        lineage_root -> boolean; whether or not base is root
+        relationship -> relationship between base and related lineage institutions
+        '''
+        exploded_lineage = data.select(
+            pl.col('id').alias('base_institution_id'),
+            pl.col('lineage').alias('related_institution_id'),
+            pl.col('lineage_root'),
+            pl.col('associated_institutions')
+        ).explode('related_institution_id')\
+        .filter(
+            pl.col('base_institution_id') != pl.col('related_institution_id')
+        )
+
+        lineage_rl = exploded_lineage\
+            .explode('associated_institutions')\
+            .filter(
+                pl.col('associated_institutions').struct.field('id') == pl.col('related_institution_id')
+            )\
+            .select(
+                pl.col('base_institution_id').alias(GRAPH_START_ID),
+                pl.col('related_institution_id').alias(GRAPH_END_ID),
+                pl.col('associated_institutions').struct.field('relationship')
+            )
+        
+        # Map the SFU_15 to the its related institution node        
+        affiliated_rl = data.select(
+            pl.col('id').alias(GRAPH_START_ID)
+        )\
+        .with_columns(
+            pl.col(GRAPH_START_ID).alias(GRAPH_END_ID)
+        )
+
+        originalTable.data = originalTable.data.drop(['lineage', 'associated_institutions'])        
+        return GraphDataCollection(
+            relationships=[
+                GraphRelationship(data=lineage_rl, start_type=NodeType.SFU_U15_institution, target_type=NodeType.SFU_U15_institution),
+                GraphRelationship(data=affiliated_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.SFU_U15_institution)
+            ],
+            nodes=[]
+        )
+
+    def _deriveAuthorships(originalTable: GraphTable, data:LazyFrame) -> GraphDataCollection:
+        # The works data is large, so minimize the data size
+        exploded = data.select(
+            pl.col('id').alias('work_id'),
+            pl.col('authorships')
+        ).explode('authorships')\
+        .unnest('authorships')\
+        .select(
+            pl.col('work_id'),
+            pl.col('author').struct.field('id').alias('author_id'),
+            pl.col('author').struct.field('display_name'),
+            pl.col('institutions')
+        )\
+        .explode('institutions')
+
+        '''
+        All authors that had relation to the U15+SFU are contained within the AUTHORS table
+        Best to leave out unless want to include another degree of separation to include non-target authors.
+
+        authorship_rl = exploded.select(
+            pl.col('author_id'),
+            pl.col('institutions').struct.field('id').alias('institution_id'),
+        ).drop_nulls().unique()
+        '''
+
+        institutions_nodes = exploded.select(
+            pl.col('institutions').struct.field('id'),
+            pl.col('institutions').struct.field('display_name'),
+            pl.col('institutions').struct.field('type')
+        ).drop_nulls().unique(keep='first', subset=['id'])
+
+        institution_geo_rl = exploded.select(
+            pl.col('institutions').struct.field('id').alias(GRAPH_START_ID),
+            pl.col('institutions').struct.field('country_code').alias(GRAPH_END_ID)
+        ).drop_nulls().unique()
+
+        # Create relationship table mapping work to an author
+        author_work_rl = exploded.select(
+            pl.col('author_id').alias(GRAPH_START_ID),
+            pl.col('work_id').alias(GRAPH_END_ID)
+        )
+
+        originalTable.data = originalTable.data\
+            .drop('authorships')
+
+        return GraphDataCollection(
+            nodes=[
+                GraphTable(name=NodeType.affiliated_institution.value, type=NodeType.affiliated_institution, data=institutions_nodes)
+            ],
+            relationships=[
+                GraphRelationship(data=institution_geo_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.geographic),
+                GraphRelationship(data=author_work_rl, start_type=NodeType.author, target_type=NodeType.work)
+            ]
+        )
+
     derivedTables = {
         NodeType.source: [NodeType.topic],
         NodeType.author: [NodeType.topic, NodeType.affiliated_institution],
+        NodeType.SFU_U15_institution: [NodeType.topic, NodeType.related_institution],
+        NodeType.work : [NodeType.authorship, NodeType.topic],
+        NodeType.topic : [NodeType.domain]
     }
 
     derivedFunctions = {
-        NodeType.topic: _deriveTopics,
-        NodeType.affiliated_institution: _deriveAffiliatedInstitutions
+        NodeType.domain: _deriveTopicHierarchy,
+        NodeType.topic: _deriveTopicRelationships,
+        NodeType.affiliated_institution: _deriveAffiliatedInstitutions,
+        NodeType.related_institution: _deriveLineage,
+        NodeType.authorship: _deriveAuthorships
     }
 
 
