@@ -60,7 +60,8 @@ class ObjectFields(Enum):
         'summary_stats',
         'type',
         'works_count',
-        'topics'
+        'topics',
+        'issn_l'
     )
 
     work = (
@@ -75,6 +76,7 @@ class ObjectFields(Enum):
         #'grants',
         'id',
         'institutions_distinct_count',
+        'locations',
         'publication_date',
         #'referenced_works',
         'topics',
@@ -202,10 +204,14 @@ class PruningFunction:
 
         'open_access': [
             pl.col('open_access').struct.field(['is_oa', 'oa_status'])
+        ],
+
+        'locations': [
+            pl.col('locations').list.eval(pl.element().struct.field("source").struct.field("issn_l")).alias('issns')
         ]
     }
         
-    columnsToDrop = {'open_access', 'summary_stats'}
+    columnsToDrop = {'open_access', 'summary_stats', 'locations'}
 
     def targetedManipulateFields(self, data: LazyFrame) -> LazyFrame:
         schema = set(data.collect_schema().names())
@@ -239,9 +245,9 @@ class PruningFunction:
 
     def pruneSources(self, data: LazyFrame) -> LazyFrame:
         data = data\
-            .select(ObjectFields.source.value)
+            .select(ObjectFields.source.value)\
+            .rename({'id': 'openalex_id', 'issn_l': 'id'})
         
-
         return data
 
     def pruneWorks(self, data: LazyFrame) -> LazyFrame:
@@ -354,6 +360,7 @@ class SecondaryInformation():
         fields = NodeTypeToFields[originalTable.type].value
 
         select = []
+
         if 'topics' in fields:
             select.append('topics')
         if 'topic_share' in fields:
@@ -395,8 +402,17 @@ class SecondaryInformation():
         institutions_nodes = affiliations.select(
             pl.col('institution').struct.field('id'),
             pl.col('institution').struct.field('display_name'),
-            pl.col('institution').struct.field('type')
-        ).drop_nulls().unique(keep='first', subset=['id'])
+            pl.col('institution').struct.field('type'),
+            pl.col('institution').struct.field('lineage')
+        )\
+        .with_columns(
+            pl.when(pl.col('lineage').list.len() > 1)
+                    .then(False)
+                    .otherwise(True)
+                    .alias('lineage_root')
+        )\
+        .drop('lineage')\
+        .drop_nulls().unique(keep='first', subset=['id'])
 
         author_institution_rl = affiliations.select(
             pl.col('id').alias(GRAPH_START_ID),
@@ -420,12 +436,28 @@ class SecondaryInformation():
             pl.col('last_known_institutions').struct.field('id').alias(GRAPH_END_ID)
         )
 
+        # Get the lineage data
+        lineage_rl = affiliations.select(
+            pl.col('institution')
+        ).unnest('institution')\
+        .select(['lineage', 'id'])\
+        .explode('lineage')\
+        .filter(
+            pl.col('lineage') != pl.col('id')
+        ).rename(
+            {
+                "id": GRAPH_START_ID,
+                "lineage": GRAPH_END_ID
+            }
+        ).drop_nulls().unique()
+
         originalTable.data = originalTable.data.drop(['affiliations', 'last_known_institutions'])
 
         return GraphDataCollection(relationships=[
             GraphRelationship(author_institution_rl, start_type=NodeType.author, target_type=NodeType.affiliated_institution),
             GraphRelationship(institutions_geo_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.geographic),
-            GraphRelationship(data=author_last_known_rl, start_type=NodeType.author, target_type=NodeType.last_institution)
+            GraphRelationship(data=author_last_known_rl, start_type=NodeType.author, target_type=NodeType.last_institution),
+            GraphRelationship(lineage_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.affiliated_institution)            
         ], nodes=[
             GraphTable(name=NodeType.affiliated_institution.value, type=NodeType.affiliated_institution, data=institutions_nodes)
         ])
@@ -438,27 +470,19 @@ class SecondaryInformation():
         lineage_root -> boolean; whether or not base is root
         relationship -> relationship between base and related lineage institutions
         '''
-        exploded_lineage = data.select(
-            pl.col('id').alias('base_institution_id'),
-            pl.col('lineage').alias('related_institution_id'),
-            pl.col('lineage_root'),
+        
+        targeted = data.select(
+            pl.col('id').alias(GRAPH_START_ID),
             pl.col('associated_institutions')
-        ).explode('related_institution_id')\
-        .filter(
-            pl.col('base_institution_id') != pl.col('related_institution_id')
+        ).explode('associated_institutions')\
+        .unnest('associated_institutions')
+
+        lineage_rl = targeted.select(
+            pl.col(GRAPH_START_ID),
+            pl.col('id').alias(GRAPH_END_ID),
+            pl.col('relationship')
         )
 
-        lineage_rl = exploded_lineage\
-            .explode('associated_institutions')\
-            .filter(
-                pl.col('associated_institutions').struct.field('id') == pl.col('related_institution_id')
-            )\
-            .select(
-                pl.col('base_institution_id').alias(GRAPH_START_ID),
-                pl.col('related_institution_id').alias(GRAPH_END_ID),
-                pl.col('associated_institutions').struct.field('relationship')
-            )
-        
         # Map the SFU_15 to the its related institution node        
         affiliated_rl = data.select(
             pl.col('id').alias(GRAPH_START_ID)
@@ -504,8 +528,17 @@ class SecondaryInformation():
         institutions_nodes = exploded.select(
             pl.col('institutions').struct.field('id'),
             pl.col('institutions').struct.field('display_name'),
-            pl.col('institutions').struct.field('type')
-        ).drop_nulls().unique(keep='first', subset=['id'])
+            pl.col('institutions').struct.field('type'),
+            pl.col('institutions').struct.field('lineage')
+        )\
+        .with_columns(
+            pl.when(pl.col('lineage').list.len() > 1)
+                    .then(False)
+                    .otherwise(True)
+                    .alias('lineage_root')
+        )\
+        .drop('lineage')\
+        .drop_nulls().unique(keep='first', subset=['id'])
 
         institution_geo_rl = exploded.select(
             pl.col('institutions').struct.field('id').alias(GRAPH_START_ID),
@@ -518,6 +551,20 @@ class SecondaryInformation():
             pl.col('work_id').alias(GRAPH_END_ID)
         )
 
+        lineage_rl = exploded.select(
+            pl.col('institutions')
+        ).unnest('institutions')\
+        .select(['lineage', 'id'])\
+        .explode('lineage')\
+        .filter(
+            pl.col('lineage') != pl.col('id')
+        ).rename(
+            {
+                "id": GRAPH_START_ID,
+                "lineage": GRAPH_END_ID
+            }
+        ).drop_nulls().unique()
+    
         originalTable.data = originalTable.data\
             .drop('authorships')
 
@@ -527,7 +574,8 @@ class SecondaryInformation():
             ],
             relationships=[
                 GraphRelationship(data=institution_geo_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.geographic),
-                GraphRelationship(data=author_work_rl, start_type=NodeType.author, target_type=NodeType.work)
+                GraphRelationship(data=author_work_rl, start_type=NodeType.author, target_type=NodeType.work),
+                GraphRelationship(data=lineage_rl, start_type=NodeType.affiliated_institution, target_type=NodeType.affiliated_institution)
             ]
         )
 

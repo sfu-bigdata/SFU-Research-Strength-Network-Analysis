@@ -125,4 +125,5 @@ class N4J_Connection(object):
                 return res
         except Exception as e:
             print(f"Failed to execute the query: {query}\n{e}")
+            raise e
             

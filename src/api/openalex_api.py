@@ -15,10 +15,10 @@ class id_format(Protocol):
 
 # IDs for relevant institutions SFU + U15
 institution_ids : tuple[id_format] = (
-   # ('i18014758', 'f4320322551'), # Simon Fraser University
-   # ('i141945490', 'f4320323180'), # University of British Columbia
-   # ('i129902397', 'f4320321629'), # Dalhousie University
-   # ('i154425047', 'f4320319946'), # University of Alberta
+    ('i18014758', 'f4320322551'), # Simon Fraser University
+    ('i141945490', 'f4320323180'), # University of British Columbia
+    ('i129902397', 'f4320321629'), # Dalhousie University
+    ('i154425047', 'f4320319946'), # University of Alberta
     ('i5023651', 'f4320310638'), # McGill University
     ('i98251732', 'f4320311526'), # McMaster University
     ('i125749732', 'f4320322601'), # Western University
@@ -36,7 +36,6 @@ institution_ids : tuple[id_format] = (
 
 def send_request(client: httpx.Client, method : str, endpoint : APIEndpoints, parameters : map):
     request = client.build_request(method=method, url=endpoint.value, params=parameters)
-    print(request)
     res = client.send(request)
     if res.status_code != 200:
         raise Exception(f'Error completing GET request:\nStatus Code: {res.status_code}\n{request}', request)

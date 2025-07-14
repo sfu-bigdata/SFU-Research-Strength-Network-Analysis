@@ -4,6 +4,7 @@ from typing import Optional
 from config import NodeType, GRAPH_START_ID, GRAPH_END_ID
 from dataclasses import dataclass
 from .conf import GraphObject, ObjectNames
+from enum import Enum
 
 @dataclass
 class RelationshipObject:
@@ -16,6 +17,7 @@ class RelationshipObject:
 class Relationships():
     
     RelationshipTypeMap = {
+        (NodeType.affiliated_institution, NodeType.affiliated_institution): 'IN_LINEAGE_WITH',
         (NodeType.affiliated_institution, NodeType.geographic): 'INSTITUTION_SITUATED_IN',
         (NodeType.affiliated_institution, NodeType.SFU_U15_institution): 'INSTITUTION_IS_THE_SAME_AS',
         (NodeType.author, NodeType.affiliated_institution): 'AFFILIATED_WITH',
@@ -37,7 +39,8 @@ class Relationships():
         (NodeType.source, NodeType.work) : 'CONTAINS',
         (NodeType.subfield, NodeType.field) : 'IN_FIELD',
         (NodeType.topic, NodeType.subfield) : 'IN_SUBFIELD',
-        (NodeType.work, NodeType.topic) : 'HAS_TOPIC'
+        (NodeType.work, NodeType.topic) : 'HAS_TOPIC',
+        (NodeType.work, NodeType.work) : 'REFERENCES_WORK'
     }
 
     def createRelationshipObject(
@@ -60,3 +63,14 @@ class Relationships():
             target_id=target_cols,
             rel_type=rel_type
         )
+
+class PropertyType(Enum):
+    ONE_TO_ONE=0,
+    CONTAINED=1
+
+@dataclass
+class PropertyRelationship:
+    relationship: RelationshipObject
+    properties: dict[str, str]
+    propertyType: PropertyType
+

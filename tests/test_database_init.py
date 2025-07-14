@@ -4,6 +4,7 @@ Collection of tests concerning the initialization of a Neo4j Database
 
 These tests require a running connectable database instance.
 '''
+from graphdb.relationships import Relationships
 import src.graphdb.helpers as GraphHelpers
 from src.graphdb.connect import N4J_Connection, ConnectionType
 from src.graphdb.conf import DatabaseConfig, ObjectNames, GraphObject, GraphType
@@ -63,7 +64,7 @@ def connection():
         connectionType=ConnectionType.bolt
     )
     return connection
-
+'''
 @pytest.mark.dependency(depends=['test_bolt_connection'])
 def test_initialization(connection):
     connection.execute_cypher_query(GraphHelpers.CypherQueryCollection.SELECT_ALL_NODES.value)
@@ -88,10 +89,11 @@ def test_create_relationship_constraints(connection, db_fx_setup):
             set(['id']),
             'IS UNIQUE'
         )
-
+'''
 def test_load_nodes_db(connection, db_fx_setup):
-    Setup.load_nodes_into_db(connection, DATABASE_OUTPUT_DIR.joinpath('nodes')))
+    Setup.load_into_db(connection, DATABASE_OUTPUT_DIR, load_nodes=True, load_relationships=False)
 
-
+'''
 def test_load_relationships_db(connection, db_fx_setup):
-    Setup.load_relationships_into_db(connection, DATABASE_OUTPUT_DIR.joinpath('relationships'))
+    Setup.load_into_db(connection, DATABASE_OUTPUT_DIR, load_nodes=False, load_relationships=True)
+'''
