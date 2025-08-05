@@ -74,7 +74,7 @@ institution_abbreviations = {
     'University of Waterloo': 'UWaterloo',
     'Queen\'s University': 'Queen\'s',
     'Université Laval': 'ULaval',
-    'Dalhousie University': 'Dal',
+    'Dalhousie University': 'Dalhousie',
     'University of Manitoba': 'UManitoba',
     'University of Saskatchewan': 'USask'
 

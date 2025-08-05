@@ -5,7 +5,7 @@ Retrieve and format extracted data for later usage
 import math
 from .client import Client
 from config import NodeType, VISUALIZATION_DATA_DIR, SFU_RED, institution_abbreviations
-from .config import VisualizationDataPaths
+from .config import VisualizationDataPaths, colors as config_colors
 import pandas as pd
 from src.graphdb.conf import ObjectNames
 from src.graphdb.relationships import Relationships
@@ -98,6 +98,7 @@ class VisualizationData():
 class VisualizationType(Enum):
     BUBBLE_CHART = 0
     BAR_CHART = 1
+    TREEMAP_CHART = 2
 
 class GraphVisualization():
 
@@ -190,24 +191,7 @@ class GraphVisualization():
 
         nodes = []
         
-        colors =[
-                '#0077BB',  # Blue
-                '#EE7733',  # Orange
-                '#009988',  # Teal
-                '#EE3377',  # Magenta
-                '#CCBB44',  # Yellow
-                '#33BBEE',  # Cyan
-                '#BB4477',  # Rose
-                '#AA4499',  # Purple
-                '#DDAA33',  # Old Gold
-                '#77AADD',  # Light Blue
-                '#44AA99',  # Green-Cyan
-                '#BB5566',  # Dark Rose
-                '#882255',  # Wine
-                '#AA4466',  # Strong Rose
-                '#66AB9D',  # Dull Teal
-                '#99DDFF'   # Pale Cyan
-            ]
+        colors = config_colors
         
         max_val_sqrt = math.sqrt(dataframe[metric_column].max())
         cleaned_title : str = metric_column.replace('_', ' ')
@@ -252,10 +236,66 @@ class GraphVisualization():
         }
         return echart_config
 
-    
+    def _create_treemap_chart(
+            dataframe: pd.DataFrame,
+            metric_column: str
+    ):
+
+        cleaned_title : str = metric_column.replace('_', ' ')
+        '''
+        'tooltip': {
+            'trigger': 'item',
+            'formatter': '<strong>{b}</strong>:<br/>'+cleaned_title.capitalize()+': {c}'
+        },
+        '''
+
+        colors = config_colors
+
+        treemap_data = [
+            {
+                'name': row['display_name'],
+                'value': row[metric_column]
+            } for _, row in dataframe.iterrows()
+        ]
+
+        echart_config = {
+            'color': colors,
+            'tooltip': {
+                'trigger': 'item',
+                'formatter': '<strong>{b}</strong>:<br/>'+cleaned_title.capitalize()+': {c}'
+            },
+            'series': [{
+                'type': 'treemap',
+                'data': treemap_data,
+                'visualDimension': 1,
+                'leafDepth': 1,
+                'levels': [
+                    {
+                        'itemStyle': {
+                            'borderColor': 'transparent',
+                            'borderWidth': 0,
+                            'gapWidth': 4,
+                            'shadowColor': 'rgba(0,0,0,1)',
+                            'shadowBlur': 10
+                        }
+                    },
+                ],
+                'legend': {},
+                'breadcrumb': {
+                    'show': False
+                }
+            }],
+            'title': {},
+        }
+
+        return echart_config
+        
+        
+
     supported_graphs = {
         VisualizationType.BUBBLE_CHART : _create_bubble_chart,
-        VisualizationType.BAR_CHART: _create_bar_chart
+        VisualizationType.BAR_CHART: _create_bar_chart,
+        VisualizationType.TREEMAP_CHART: _create_treemap_chart
     }
 
     def create_graph(
