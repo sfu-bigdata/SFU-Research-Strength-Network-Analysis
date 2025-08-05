@@ -26,16 +26,19 @@ class GraphObject:
     name: str
 
 ObjectNames = {
-    NodeType.author : GraphObject(prefix='A', name='author'),
-    NodeType.funder : GraphObject(prefix='F', name='funder'),
-    NodeType.SFU_U15_institution : GraphObject(prefix='I', name='sfu_u15_institution'),
-    NodeType.source : GraphObject(prefix='S', name='source'),
-    NodeType.work : GraphObject(prefix='W', name='work'),
-    NodeType.topic : GraphObject(prefix='T', name='topic'),
-    NodeType.subfield : GraphObject(prefix='SFLD', name='subfield'),
-    NodeType.field : GraphObject(prefix='FLD', name='field'),
-    NodeType.domain : GraphObject(prefix='D', name='domain'),
-    NodeType.geographic : GraphObject(prefix='GEO', name='geographic'),
-    NodeType.affiliated_institution: GraphObject(prefix='AFL_INS', name='affiliated_institution'),
-    NodeType.last_institution: GraphObject(prefix='AFL_INS', name='affiliated_institution')
+    NodeType.author : GraphObject(prefix='A', name=NodeType.author.value),
+    NodeType.funder : GraphObject(prefix='F', name=NodeType.funder.value),
+    NodeType.SFU_U15_institution : GraphObject(prefix='I', name=NodeType.SFU_U15_institution.value),
+    NodeType.source : GraphObject(prefix='S', name=NodeType.source.value),
+    NodeType.work : GraphObject(prefix='W', name=NodeType.work.value),
+    NodeType.topic : GraphObject(prefix='T', name=NodeType.topic.value),
+    NodeType.subfield : GraphObject(prefix='SFLD', name=NodeType.subfield.value),
+    NodeType.field : GraphObject(prefix='FLD', name=NodeType.field.value),
+    NodeType.domain : GraphObject(prefix='D', name=NodeType.domain.value),
+    NodeType.geographic : GraphObject(prefix='GEO', name=NodeType.geographic.value),
+    NodeType.affiliated_institution: GraphObject(prefix='AFL_INS', name=NodeType.affiliated_institution.value),
+    NodeType.last_institution: GraphObject(prefix='AFL_INS', name=NodeType.affiliated_institution.value),
+    NodeType.issn: GraphObject(prefix='issn', name=NodeType.issn.value),
+    NodeType.authorship: GraphObject(prefix='aush', name=NodeType.authorship.value),
+    NodeType.year: GraphObject(prefix='YR', name=NodeType.year.value)
 }

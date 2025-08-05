@@ -7,6 +7,9 @@ class CypherQueryCollection(Enum):
     CLEAR_SCHEMA = """
         CALL apoc.schema.assert({}, {}, true);
     """
+    DROP_DATABASE = """
+        DROP DATABASE IF EXISTS Neo4j;
+    """
     DELETE_NODES = """
         CALL apoc.periodic.iterate(
         'MATCH (n) RETURN n', 'DETACH DELETE n', {batchSize:1000}

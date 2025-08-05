@@ -84,7 +84,7 @@ def extract(output_path: Path) -> None:
     '''
     api = OpenAlexApi()
     for (institution, funder) in institution_ids:
-        '''
+
         print(f'Gathering sources for institution: {institution}')
         # Get all hosted sources by institutions (may be better as SFU is not a publisher)
         filter = '%s:%s%s' % ('host_organization_lineage', conf.BASE_URI, institution)
@@ -97,7 +97,6 @@ def extract(output_path: Path) -> None:
             write_chunk_cutoff=100
         )
         print(f'Finished gathering sources for institution: {institution}')
-        '''
 
         print(f'Beginning retrieval of works for institution: {institution}')
         # Get all works where the institution has atleast one affiliated researcher involved
@@ -125,8 +124,6 @@ def extract(output_path: Path) -> None:
         )
         print(f'Finished gathering funded works for funder: {funder}')
 
-
-    '''
         # Get all affiliated institutions
         print(f'Gathering all affiliated institutions for: {institution}')
         filter = '%s:%s%s' % ('lineage', conf.BASE_URI, institution)
@@ -143,6 +140,7 @@ def extract(output_path: Path) -> None:
         #write_to_disk(publisher_works, path.join(output_path, 'publisher_works'))
         print('Finished writing data to disk')
         print(f'Completed gathering data for institution id: {institution}')
+    
     # Get all authors that at some point claimed an affiliation with Simon Fraser University
     # SFU Institution ID
     print('Gathering SFU affiliated author objects.')
@@ -243,6 +241,5 @@ def extract(output_path: Path) -> None:
         WriteFx=WriteFunctor(output_path.joinpath('topics'), 'topics')
     )
     print(f'Finished gathering topics objects.')
-    '''
     print('Data extraction complete.')
         

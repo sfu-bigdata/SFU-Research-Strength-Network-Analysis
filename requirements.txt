@@ -6,3 +6,6 @@ pytest
 pytest-dependency
 neo4j
 dot-env
+graphdatascience
+pandas
+panel

@@ -5,6 +5,7 @@ from .pruning_conf import PruningFunction, SecondaryInformation
 from ..utils import helpers
 from .conf import GraphTable,GraphDataCollection,GraphRelationship, designatedDirectories, schemas
 from config import GEOGRAPHIC_DATA_LOCATION, NodeType
+import datetime
 
 def preprocess_data_item(
     type: NodeType,
@@ -136,6 +137,17 @@ def process_geographic_data(input_path: Path, output_path: Path):
     output_path.mkdir(parents=True, exist_ok=True)
     geodata.write_parquet(file=output_path.joinpath('geographic.parquet') ,compression='zstd')
 
+def generate_years(output_path: Path):
+    current_year = datetime.datetime.now().year
+
+    df = pl.DataFrame({
+        "id": pl.Series(range(1970, current_year+1), dtype=pl.Int32)
+    })
+
+    output_path = output_path.joinpath('nodes', 'year.parquet')
+    print(f"Saving year data to: {output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(output_path, compression='zstd')
 
 def preprocess(
         input_dir: Path,
@@ -152,4 +164,5 @@ def preprocess(
     print('Adding additional data...')
     print('Processing geographic information')
     process_geographic_data(GEOGRAPHIC_DATA_LOCATION, output_path.joinpath('geographic_data', NodeType.geographic.value))
+    generate_years(output_path.joinpath('year_data', NodeType.year.value))
     print('Finished generating Parquet.')

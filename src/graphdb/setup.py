@@ -100,7 +100,7 @@ def load_nodes_into_db(connection: N4J_Connection,
         SET {graphObjectType.prefix} += row",
         {{
             batchSize: 1000,
-            parallel: true,
+            parallel: false,
             retries: 5
         }}
         )
@@ -183,7 +183,7 @@ def load_relationships_into_db(connection: N4J_Connection, relationship_dir: Pat
             ",
             {{
                 batchSize: 1000,
-                parallel: true,
+                parallel: false,
                 retries: 5
             }}
         )
@@ -234,13 +234,4 @@ def setup_full(connection: N4J_Connection,
             connection.create_indexes(GraphObject.name, GraphObject.prefix, set(['id']), GraphType.NODE)
 
     # Load nodes into DB
-    relationships = Relationships()
-    load_into_db(connection=connection, input_dir=DATABASE_OUTPUT_DIR, propertyRelationships=[
-        PropertyRelationship(
-            relationships.createRelationshipObject(NodeType.source, NodeType.work),
-            {
-                'id': 'issns'
-            },
-            PropertyType.CONTAINED
-        )
-    ])
+    load_into_db(connection=connection, input_dir=DATABASE_OUTPUT_DIR)
