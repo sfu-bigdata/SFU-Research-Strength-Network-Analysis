@@ -140,20 +140,20 @@ def extract(output_path: Path) -> None:
         #write_to_disk(publisher_works, path.join(output_path, 'publisher_works'))
         print('Finished writing data to disk')
         print(f'Completed gathering data for institution id: {institution}')
-    
-    # Get all authors that at some point claimed an affiliation with Simon Fraser University
-    # SFU Institution ID
-    print('Gathering SFU affiliated author objects.')
-    (institution, _) = institution_ids[0]
-    filter = '%s:%s%s' % ('affiliations.institution.lineage', conf.BASE_URI, institution)
-    api.retrieve_list(
-        APIEndpoints.AUTHORS,
-        pagination=True,
-        pagination_type = PaginationTypes.CURSOR,
-        filter=filter,
-        WriteFx=WriteFunctor(output_path.joinpath('authors'), institution)
-    )
+
+        # Get all authors that at some point claimed an affiliation with Simon Fraser University
+        # SFU Institution ID
+        print(f'Gathering all affiliated author objects for {institution}')
+        filter = '%s:%s%s' % ('affiliations.institution.id', conf.BASE_URI, institution)
+        api.retrieve_list(
+            APIEndpoints.AUTHORS,
+            pagination=True,
+            pagination_type = PaginationTypes.CURSOR,
+            filter=filter,
+            WriteFx=WriteFunctor(output_path.joinpath('authors'), institution)
+        )
     print('Finished collecting author data.')
+
     # Get all journal data
     print('Gathering information related to journals.')
 

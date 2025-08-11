@@ -19,6 +19,7 @@ class ObjectFields(Enum):
         'works_count',
         'summary_stats',
         'counts_by_year',
+        'cited_by_count',
         #'topics',
         'topic_share',
         'associated_institutions'

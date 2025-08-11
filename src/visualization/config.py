@@ -7,8 +7,9 @@ class VisualizationDataPaths(Enum):
     '''
 
     summary_node_information = VISUALIZATION_DATA_DIR.joinpath("summary_node_information.csv")
-    summary_nodes_by_institution = VISUALIZATION_DATA_DIR.joinpath("summary_nodes_institution.csv")
-
+    summary_nodes_by_institution_works = VISUALIZATION_DATA_DIR.joinpath("summary_nodes_institution.csv")
+    summary_nodes_by_institution_authors = VISUALIZATION_DATA_DIR.joinpath("summary_nodes_authors.csv")
+    summary_counts_by_year = VISUALIZATION_DATA_DIR.joinpath("summary_counts_by_year.csv")
 
 colors =[
     '#0077BB',  # Blue
@@ -28,3 +29,7 @@ colors =[
     '#66AB9D',  # Dull Teal
     '#99DDFF'   # Pale Cyan
 ]
+
+GRAPH_WIDTH = 750
+GRAPH_HEIGHT = 550
+SFU_TARGET_INSTITUTION_ID = 'I18014758' 
