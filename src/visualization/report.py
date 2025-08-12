@@ -28,25 +28,47 @@ graph_viz = GraphVisualization()
 
 class Report():
 
+    def _introduction_section(self):
+        '''
+        Opening section that provides basic details.
+        '''
+        summary_node_information = pd.read_csv(VisualizationDataPaths.summary_node_information.value)
+
+        labels : dict = literal_eval(summary_node_information['labels'].iloc[0])
+        node_count : int = summary_node_information['nodeCount'].iloc[0]
+        relationship_count: int = summary_node_information['relCount'].iloc[0] 
+        
+        return pn.Column(
+            pn.pane.Markdown(
+                f"""
+                ## Introduction
+                Using the [OpenAlex API](https://openalex.org), data was collected across all data
+                pertaining to Simon Fraser University and the U15 Group of Canadian Research Universities.
+                Extracted data includes information on the institutions themselves, works produced, and the authors of works related to the select institutions. 
+
+                The extracted data has been transformed into **{node_count:,}** Neo4j database objects including:
+                - **{labels[NodeType.SFU_U15_institution.value]:,}** institutions in the direct lineage of SFU and the U15.
+                - **{(labels[NodeType.affiliated_institution.value]+labels[NodeType.SFU_U15_institution.value]):,}** institutions in total.
+                - **{labels[NodeType.work.value]:,}** works produced by the target institutions.
+                - **{labels[NodeType.author.value]:,}** authors that have authorships with the target institutions.
+                - **{labels[NodeType.source.value]:,}** selected journals.
+
+                Between these objects a total of **{relationship_count:,}** relationships have been defined between graph nodes.
+                
+                ### Include more stuff later on, breakdown of objects etc.
+                """
+            )
+        )
     
+    def introduction_page(self):
+        return pn.Column(
+            self._introduction_section(),
+    )
+
     def _institution_comparison_section(self):
         '''
         This section will provide a general overview of the data.
         '''
-        # As institution
-            # Beginning with the total count of each type of data.
-            # Number of works, Number of authors, Number of total related authorships
-            # Citations by year for each institution - filter by domain, field, subfield, topic
-            # Topics, Topic Share, Counts by Topic
-
-        # As funders, where do these institutions stand?
-            # Number of grants, works, citations
-            # Summary stats scores comparison, and then adjusted for works output
-            # Citations by year for each institution - filter by domain, field, subfield, topic
-            # Topics, Topic Share, Counts by Topic
-
-        # Another section, filter by Topic and Institution
-
 
         def work_comparison():
             # For each SFU + U15, numbers for each role
@@ -188,6 +210,63 @@ class Report():
                 )
             )
         
+        def general_output_over_time():
+
+            df = pd.read_csv(VisualizationDataPaths.summary_counts_by_year.value)
+
+            target_columns = ['works_count', 'cited_by_count']
+
+            graph = graph_viz.create_choice_graph(
+                graph_types=[VisualizationType.THEME_RIVER_CHART, VisualizationType.BAR_RACE_CHART, VisualizationType.STACKED_AREA_CHART, VisualizationType.SMOOTHED_LINE_CHART],
+                dataframe=df,
+                data_columns=target_columns,
+                title='Data Over Time'
+            )
+
+            min_year = df['year'].min()
+            max_year = df['year'].max()
+
+            sfu = df[df['id'] == SFU_TARGET_INSTITUTION_ID].set_index('year')
+
+            u15 = df[df['id'] != SFU_TARGET_INSTITUTION_ID][['year']+target_columns]
+            u15 = u15.groupby('year').mean()
+
+            df = df.set_index('id')
+            df = pd.concat([df['year'], df[['year']+target_columns].groupby('year').rank(method='first', ascending=False)], axis=1).reset_index()
+            sfu_ranked = df[df['id'] == SFU_TARGET_INSTITUTION_ID].set_index('year')
+
+            return pn.Column(
+                graph,
+                pn.pane.Markdown(
+                    f"""
+                        **How does SFU compare?**
+
+                        - **Works Count:** 
+
+                            - **Relative Rank:** SFU begins with a works count rank of {int(sfu_ranked.loc[min_year]['works_count']):,} in {min_year} and ended with a rank of {int(sfu_ranked.loc[max_year]['works_count']):,} in {max_year}.
+                        
+                            - **Relative Growth** SFU started with a value of {sfu.loc[min_year]['works_count']} in {min_year} and ended with a value of {sfu.loc[max_year]['works_count']} in {max_year},
+                            this represents a relative change of {custom_number_format((sfu.loc[max_year]['works_count']-sfu.loc[min_year]['works_count'])/sfu.loc[min_year]['works_count']*100)}%. Comparatively, the U15 average is {custom_number_format((u15.loc[max_year]['works_count']-u15.loc[min_year]['works_count'])/u15.loc[min_year]['works_count']*100)}%.
+                    
+                        - **Cited By Count:** 
+
+                            - **Relative Rank:** SFU begins with a cited by count rank of {int(sfu_ranked.loc[min_year]['cited_by_count']):,} in {min_year} and ended with a rank of {int(sfu_ranked.loc[max_year]['cited_by_count']):,} in {max_year}.
+                        
+                            - **Relative Growth** SFU started with a value of {sfu.loc[min_year]['cited_by_count']} in {min_year} and ended with a value of {sfu.loc[max_year]['cited_by_count']} in {max_year},
+                            this represents a relative change of {custom_number_format((sfu.loc[max_year]['cited_by_count']-sfu.loc[min_year]['cited_by_count'])/sfu.loc[min_year]['cited_by_count']*100)}%. Comparatively, the U15 average is {custom_number_format((u15.loc[max_year]['cited_by_count']-u15.loc[min_year]['cited_by_count'])/u15.loc[min_year]['cited_by_count']*100)}%.
+                    """
+                )
+            )
+
+        def conclusion():
+            return pn.pane.Markdown(
+                f"""
+                **Summary:** When looking at a general overview of the data, there are some significant differences in terms of output by institution.
+                Simon Fraser University has relatively low works output and a relatively low number of affiliated authors compared to U15 institutions.
+                However, SFU does relatively well when regarding the quality of the works relating to the institution, with above average values for author productivity, citation scores, I10-index, and the number of citations per author.  
+                """
+            )
+        
         return pn.Column(
             pn.pane.Markdown(
                 f"""
@@ -199,50 +278,225 @@ class Report():
             ),
             work_comparison(),
             pn.HSpacer(),
-            author_comparison()
+            author_comparison(),
+            pn.HSpacer(),
+            general_output_over_time(),
+            pn.HSpacer(),
+            conclusion()
         )
 
-        
-
-
-    def _introduction_section(self):
-        '''
-        Opening section that provides basic details.
-        '''
-        summary_node_information = pd.read_csv(VisualizationDataPaths.summary_node_information.value)
-
-        labels : dict = literal_eval(summary_node_information['labels'].iloc[0])
-        node_count : int = summary_node_information['nodeCount'].iloc[0]
-        relationship_count: int = summary_node_information['relCount'].iloc[0] 
-        
+    def general_comparison_page(self):
         return pn.Column(
-            pn.pane.Markdown(
-                f"""
-                ## Introduction
-                Using the [OpenAlex API](https://openalex.org), data was collected across all data
-                pertaining to Simon Fraser University and the U15 Group of Canadian Research Universities.
-                Extracted data includes information on the institutions themselves, works produced, and the authors of works related to the select institutions. 
-
-                The extracted data has been transformed into **{node_count:,}** Neo4j database objects including:
-                - **{labels[NodeType.SFU_U15_institution.value]:,}** institutions in the direct lineage of SFU and the U15.
-                - **{(labels[NodeType.affiliated_institution.value]+labels[NodeType.SFU_U15_institution.value]):,}** institutions in total.
-                - **{labels[NodeType.work.value]:,}** works produced by the target institutions.
-                - **{labels[NodeType.author.value]:,}** authors that have authorships with the target institutions.
-                - **{labels[NodeType.source.value]:,}** selected journals.
-
-                Between these objects a total of **{relationship_count:,}** relationships have been defined between graph nodes.
-                
-                ### Include more stuff later on, breakdown of objects etc.
-                """
-            )
-        )
-    
-    def introduction_page(self):
-        return pn.Column(
-            self._introduction_section(),
             self._institution_comparison_section()
     )
+
+    def _analysis_section(self):
+        '''
+        This section will provide a more in depth look at the Open Alex Data.
+        '''
+
+        def works_analysis():
+            '''
+            Detail the works by institution
+            
+            Included Data:
+
+                First within the institutions:
+                    Categorization:
+                        OA Status
+                        Type
+
+                    Numerical Catagorization:
+                        Countries Distinct Count
+                        Institutions Distinct Count
+                        FWCI
+
+                    Over time:
+                        Publication year (bar)
+                
+                Then for comparison:
+                    OA Status -> percentage (bar)
+                    Type -> percentage (bar)
+                    FWCI -> bar (mean)
+                    Countries -> bar
+                    Institutions -> bar
+            '''
+
+            df = pd.read_csv(VisualizationDataPaths.work_analysis.value)
+
+
+            '''
+            Categorical Dataframe
+            '''
+
+            categorical_columns = ['type', 'is_open_access', 'open_access_status']
+            for category in categorical_columns:
+                df[category] = df[category].apply(literal_eval).fillna(0)
+
+            categorical = pn.Column(
+                graph_viz.create_choice_graph(
+                    graph_types=[VisualizationType.PIE_CHART, VisualizationType.TREEMAP_CHART],
+                    dataframe=df[['id', 'display_name']+categorical_columns],
+                    data_columns=categorical_columns,
+                    additional_filters=['id']
+                )
+            )
+
+            '''
+            Numerical Categorization
+            '''
+            numerical_columns = ['avg_distinct_countries', 'avg_distinct_institutions', 'avg_citation_normalized_percentile', 'avg_fwci', 'avg_apc_paid']
+
+            numerical = pn.Column(
+                graph_viz.create_choice_graph(
+                    graph_types=[VisualizationType.BAR_CHART, VisualizationType.SMOOTHED_LINE_CHART, VisualizationType.BUBBLE_CHART],
+                    dataframe=df[['id', 'display_name']+numerical_columns],
+                    data_columns=numerical_columns
+                )
+            )
+            '''
+            Over Time
+            '''
+            temporal_columns = ['total_by_publication_year']
+            local_df = df.copy(deep=True)
+            local_df = local_df[['id', 'display_name', 'total_by_publication_year']]
+            publication_data = local_df['total_by_publication_year'].apply(literal_eval)
+            local_df.loc[:,'year'] = [list(d.keys()) for d in publication_data]
+            local_df.loc[:,'total'] = [list(d.values()) for d in publication_data]
+            local_df = local_df.drop(columns=temporal_columns)
+
+            publication_data = local_df.explode(['year', 'total'])
+            publication_data['year'] = publication_data['year'].apply(literal_eval)
+
+            # Filter out all years before 2000
+            publication_data = publication_data[(publication_data['year'] >=2000)&(publication_data['year']<2025)]
+            '''
+            Modify the dataframe for usage
+            '''
+            
+
+
+
+            temporal = graph_viz.create_choice_graph(
+                graph_types=[VisualizationType.THEME_RIVER_CHART, VisualizationType.BAR_RACE_CHART, VisualizationType.STACKED_AREA_CHART, VisualizationType.SMOOTHED_LINE_CHART],
+                dataframe=publication_data,
+                data_columns=['total']
+            )
+
+            
+            return pn.Column(
+                categorical,
+                numerical,
+                temporal
+            )
+
+        def authors_analysis():
+            '''
+            Authors counts by year -> cited by count, works count
+            affiliated per year
+            '''
+            
+            df = pd.read_csv(VisualizationDataPaths.author_analysis.value)
+
+            # Split the dataframe in two due to large discrepancy between year values
+
+            # author_counts_by_year is nested list
+            authors_by_year = df.copy(deep=True)
+            authors_by_year['author_counts_by_year'] = authors_by_year['author_counts_by_year'].apply(literal_eval)
+
+            authors_by_year = authors_by_year[['id','display_name', 'author_counts_by_year']].to_dict('records')
+
+            authors_by_year = pd.json_normalize(
+                authors_by_year,
+                record_path='author_counts_by_year',
+                meta=['id', 'display_name']
+            )
+
+            # Split them because of the timeframe distance
+            affiliated_per_year = df.copy(deep=True)
+            affiliated_per_year = affiliated_per_year[['id', 'display_name', 'affiliated_per_year']]
+            affiliated_data = affiliated_per_year['affiliated_per_year'].apply(literal_eval)
+
+            affiliated_per_year.loc[:, 'year'] = [list(d.keys()) for d in affiliated_data]
+            affiliated_per_year.loc[:, 'affiliations'] = [list(d.values()) for d in affiliated_data]
+
+            affiliated_per_year = affiliated_per_year.drop(columns=['affiliated_per_year'])
+            affiliated_per_year = affiliated_per_year.explode(['year', 'affiliations'])
+
+            # Filter out affiliations before 2000
+            affiliated_per_year['year'] = affiliated_per_year['year'].apply(literal_eval)
+            affiliated_per_year = affiliated_per_year[(affiliated_per_year['year'] >= 2000)&(affiliated_per_year['year'] < 2025)]
+
+            authors = graph_viz.create_choice_graph(
+                graph_types=[VisualizationType.THEME_RIVER_CHART, VisualizationType.BAR_RACE_CHART, VisualizationType.STACKED_AREA_CHART, VisualizationType.SMOOTHED_LINE_CHART],
+                dataframe=authors_by_year,
+                data_columns=['cited_by_count', 'works_count']
+            )
+
+            affiliated = graph_viz.create_choice_graph(
+                graph_types=[VisualizationType.THEME_RIVER_CHART, VisualizationType.BAR_RACE_CHART, VisualizationType.STACKED_AREA_CHART, VisualizationType.SMOOTHED_LINE_CHART],
+                dataframe=affiliated_per_year,
+                data_columns=['affiliations']
+            )
+
+            return pn.Column(
+                authors,
+                pn.HSpacer(),
+                affiliated
+            )
+        
+        def funders_analysis():
+            pass
+
+        def topics_analysis():
+            '''
+            General overview of Topics by institution
+            Topics by year
+            '''
+            
+            '''
+            When looking at topics include:
+                fwci by topic
+                institutions by topic
+                countries by topic
+                type by topic
+                citations count - total and by year
+            '''
+            pass
+
+        return pn.Column(
+            works_analysis(),
+            pn.HSpacer(),
+            authors_analysis(),
+            #pn.HSpacer(),
+            #topics_analysis()
+        )
+
+
+
+    def analysis_page(self):
+        return pn.Column(
+            self._analysis_section()
+        )
     
+    def journals_page(self):
+        return pn.Column(
+        )
+    
+    def research_page(self):
+        return pn.Column(
+
+        )
+    
+    def network_analysis_page(self):
+        return pn.Column(
+
+        )
+    
+    def appendix_page(self):
+        return pn.Column(
+
+        )
     
     def _journal_section(self):
         # By journal, look at number of works by institution for journal
@@ -253,12 +507,17 @@ class Report():
 
         self.pages = {
             "Introduction": self.introduction_page,
-            "Other": self.introduction_page
+            "General Comparison": self.general_comparison_page,
+            "A Closer Look": self.analysis_page,
+            "Journals": self.journals_page,
+            "Research Strengths": self.research_page,
+            "Network Analysis": self.network_analysis_page,
+            "Appendix": self.appendix_page
         }
 
         self.subsections = {
             "Introduction": {
-                "Summary": "#introduction",
-                "Basic Comparisons": "#a-general-comparison"
+            },
+            "General Comparison": {
             }
         }

@@ -2,6 +2,7 @@
 Retrieve and format extracted data for later usage
 '''
 
+from ast import literal_eval
 import math
 from .client import Client
 from config import NodeType, VISUALIZATION_DATA_DIR, SFU_RED, institution_abbreviations
@@ -14,6 +15,12 @@ from typing import Iterable
 import panel as pn
 from panel.pane import ECharts
 import numpy as np
+
+default_colors = [
+    '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', 
+    '#fc8452', '#9a60b4', '#ea7ccc', '#2c3e50', '#d35400', '#8e44ad',
+    '#16a085', '#f1c40f', '#c0392b', '#1abc9c'
+]
 
 class VisualizationData():
 
@@ -104,7 +111,7 @@ class VisualizationData():
 
         RETURN I, author_count, authorship_count, openalex_paper_count, count(DISTINCT {'t_'+authorship.prefix}) as total_author_count
         """
- 
+
         res = self.client(query)
 
         # Format the results, Node Objects need restructuring.
@@ -224,6 +231,120 @@ class VisualizationData():
         
         return
 
+    def summary_topics_counts(self):
+        pass
+
+    def works_analysis(self):
+        '''
+        Get more in depth information relating to works by institution
+        '''
+
+        sfu_15 = ObjectNames[NodeType.SFU_U15_institution]
+        afl = ObjectNames[NodeType.affiliated_institution]
+        authorship = ObjectNames[NodeType.authorship]
+        author = ObjectNames[NodeType.author]
+        paper = ObjectNames[NodeType.work]
+
+        query = f"""
+            MATCH ({sfu_15.prefix}:{sfu_15.name} {{lineage_root: TRUE}})
+            OPTIONAL MATCH ({sfu_15.prefix})<-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution),(NodeType.SFU_U15_institution)]}]-({afl.prefix}:{afl.name})<-[:{Relationships.RelationshipTypeMap[(NodeType.author, NodeType.affiliated_institution)]}]-({author.prefix}:{author.name})
+            OPTIONAL MATCH ({sfu_15.prefix})<-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution),(NodeType.SFU_U15_institution)]}]-({afl.prefix}:{afl.name})<-[:{Relationships.RelationshipTypeMap[(NodeType.authorship), (NodeType.affiliated_institution)]}]-({authorship.prefix}:{authorship.name})-[:{Relationships.RelationshipTypeMap[(NodeType.authorship),(NodeType.work)]}]->({paper.prefix}:{paper.name})
+
+            WITH DISTINCT {sfu_15.prefix}, {paper.prefix}
+            
+            RETURN
+                {sfu_15.prefix}.id as id,
+                {sfu_15.prefix}.display_name as display_name,
+                avg({paper.prefix}.countries_distinct_count) as avg_distinct_countries,
+                avg({paper.prefix}.citation_normalized_percentile) as avg_citation_normalized_percentile,
+                avg({paper.prefix}.fwci) as avg_fwci,
+                avg({paper.prefix}.institutions_distinct_count) as avg_distinct_institutions,
+                avg({paper.prefix}.apc_paid) as avg_apc_paid,
+                
+                apoc.coll.frequenciesAsMap(collect({paper.prefix}.is_oa)) as is_open_access,
+                apoc.coll.frequenciesAsMap(collect({paper.prefix}.type)) as type,
+                apoc.coll.frequenciesAsMap(collect({paper.prefix}.publication_year)) as total_by_publication_year,
+                apoc.coll.frequenciesAsMap(
+                    collect(
+                        CASE
+                            WHEN {paper.prefix}.is_oa = true THEN {paper.prefix}.oa_status
+                            ELSE null
+                        END
+                    )
+                ) as open_access_status
+
+        """
+
+        res = self.client(query)
+        
+        path = VisualizationDataPaths.work_analysis.value
+        print("Writing dataframe to directory ", path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        res.to_csv(path, index=False)
+
+        return
+
+    def authors_analysis(self):
+        '''
+        Affiliated authors by year
+        Cited by per year
+        Works Count per year
+        '''
+
+        sfu_15 = ObjectNames[NodeType.SFU_U15_institution]
+        afl = ObjectNames[NodeType.affiliated_institution]
+        author = ObjectNames[NodeType.author]
+        year = ObjectNames[NodeType.year]
+        author_afl_rel = author.prefix+'_'+afl.prefix
+        author_year_rel = author.prefix+'_'+year.prefix
+
+        query = f"""
+        MATCH ({sfu_15.prefix}: {sfu_15.name} {{lineage_root: TRUE}})
+        OPTIONAL MATCH ({sfu_15.prefix})<-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution),(NodeType.SFU_U15_institution)]}]-({afl.prefix}:{afl.name})<-[{author_afl_rel}:{Relationships.RelationshipTypeMap[(NodeType.author, NodeType.affiliated_institution)]}]-({author.prefix}:{author.name})-[{author_year_rel}:{Relationships.RelationshipTypeMap[(NodeType.author), (NodeType.year)]}]->({year.prefix}:{year.name})
+
+        WITH {sfu_15.prefix},
+            {year.prefix}.id as year,
+            sum({author_year_rel}.works_count) as total_works,
+            sum({author_year_rel}.cited_by_count) as total_citations
+
+        WITH {sfu_15.prefix}, collect(
+            CASE
+                WHEN year IS NOT NULL THEN {{
+                    year: year,
+                    works_count: total_works,
+                    cited_by_count: total_citations
+                }}
+            END
+        ) as author_counts_by_year
+       
+        OPTIONAL MATCH ({sfu_15.prefix})<-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution),(NodeType.SFU_U15_institution)]}]-(:{afl.name})<-[{author_afl_rel}:{Relationships.RelationshipTypeMap[(NodeType.author, NodeType.affiliated_institution)]}]-({author.prefix}_2:{author.name})
+        
+        UNWIND {author_afl_rel}.years AS affiliation_year
+
+        WITH {sfu_15.prefix}, author_counts_by_year, affiliation_year, count({author_afl_rel}) as count_per_year
+
+        WITH {sfu_15.prefix}, author_counts_by_year, apoc.map.fromPairs(collect([affiliation_year, count_per_year])) as affiliated_per_year
+
+        RETURN 
+            {sfu_15.prefix}.id as id,
+            {sfu_15.prefix}.display_name as display_name,
+            author_counts_by_year,
+            affiliated_per_year
+        """
+
+        res = self.client(query)
+        
+        path = VisualizationDataPaths.author_analysis.value
+        print("Writing dataframe to directory ", path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        res.to_csv(path, index=False)
+        
+        return
+
+
+
 class VisualizationType(Enum):
     BUBBLE_CHART = 'Bubble Chart'
     BAR_CHART = 'Bar Chart'
@@ -232,11 +353,97 @@ class VisualizationType(Enum):
     BAR_RACE_CHART = 'Bar Race Chart'
     STACKED_AREA_CHART = 'Stacked Area Chart'
     SMOOTHED_LINE_CHART = 'Smoothed Line Chart'
+    PIE_CHART = 'Pie Chart'
 
 class GraphVisualization():
 
+    def _create_pie_chart(
+        dataframe: pd.DataFrame, 
+        metric_column: str,
+        **additional_filters
+    ):
+
+        for k, v in additional_filters.items():
+            dataframe = dataframe[dataframe[k]==v]
+
+        
+        if dataframe[metric_column].dtype == 'object':
+            dictionary = dataframe.head(1).iloc[0][metric_column]
+            sorted_items = dict(sorted(dictionary.items()))
+            series_data = [
+                 {'name': name, 'value': value}
+                 for name, value in sorted_items.items()
+            ]
+            legend_data = [key for key in sorted_items.keys()]
+
+        else:
+            name_col = 'display_name'
+            # ECharts expects the data for a pie chart to be a list of dictionaries,
+            # with each dictionary having 'name' and 'value' keys.
+            series_data = [
+                {'name': row[name_col], 'value': row[metric_column]}
+                for _, row in dataframe.iterrows()
+            ]
+            # The legend requires a simple list of the names for each category.
+            legend_data = dataframe[name_col].to_list()
+        
+
+        echart_config = {
+            # The tooltip is configured to show data when a user hovers over a slice ('item').
+            # The formatter creates a clean label showing the series name, slice name, value, and percentage.
+            'tooltip': {
+                'trigger': 'item',
+                'formatter': '{a} <br/>{b}: {c} ({d}%)'
+            },
+            
+            # The legend displays the names of the different categories.
+            # It's oriented vertically on the left to leave ample space for the chart itself.
+            'legend': {
+                'orient': 'vertical',
+                'left': 'left',
+                'data': legend_data
+            },
+            
+            # The 'series' is the primary object that defines the chart itself.
+            'series': [
+                {
+                    'name': '',
+                    'color': default_colors,
+                    'type': 'pie',
+                    # Using an array for the radius creates a doughnut chart. 
+                    # The first value is the inner radius, the second is the outer radius.
+                    'radius': ['40%', '70%'],
+                    'avoidLabelOverlap': False,
+                    # This adds a visual effect when a user hovers over a slice,
+                    # making the chart more interactive.
+                    'emphasis': {
+                        'label': {
+                            'show': True,
+                            'fontSize': '20',
+                            'fontWeight': 'bold'
+                        }
+                    },
+                    # Disables the default labels on slices to keep the chart clean;
+                    # information is available via the tooltip and legend.
+                    'label': {
+                        'show': False,
+                        'position': 'center'
+                    },
+                    'labelLine': {
+                        'show': False
+                    },
+                    # Assign the processed data to the chart.
+                    'data': series_data
+                }
+            ]
+        }
+        
+        return echart_config
+
     def _create_smoothed_line_chart(dataframe: pd.DataFrame, 
-                                metric_column: str):
+                                metric_column: str,
+                                 **additional_filters
+                                ):
         """
         Generates an ECharts configuration for a smoothed, stacked line chart
         with a tooltip sorted by value.
@@ -259,7 +466,6 @@ class GraphVisualization():
             series_list.append({
                 'name': uni,
                 'type': 'line',
-                'stack': 'Total',
                 'smooth': True,  # *** THIS IS THE ONLY CHANGE NEEDED ***
                 'emphasis': {
                     'focus': 'series'
@@ -267,13 +473,9 @@ class GraphVisualization():
                 'data': data_points
             })
 
-        cleaned_title: str = metric_column.replace('_', ' ')
 
         echart_config = {
-            'title': {
-                'text': f'Total University {cleaned_title.title()} Over Time',
-                'left': 'center'
-            },
+            'title': {},
             'color': colors,
             'tooltip': {
                 'trigger': 'axis',
@@ -308,7 +510,9 @@ class GraphVisualization():
         return echart_config
 
     def _create_stacked_area_chart(dataframe: pd.DataFrame, 
-                               metric_column: str):
+                               metric_column: str,
+                                **additional_filters
+                               ):
         """
         Generates an ECharts configuration for a stacked area chart.
         """
@@ -392,7 +596,9 @@ class GraphVisualization():
         return echart_config
 
     def _create_bar_race_chart(dataframe: pd.DataFrame, 
-                           metric_column: str):
+                           metric_column: str,
+                            **additional_filters
+                           ):
         """
         Generates an ECharts configuration for a bar race chart.
         """
@@ -514,7 +720,8 @@ class GraphVisualization():
 
     def _create_theme_river_chart(
             dataframe: pd.DataFrame,
-            metric_column: str
+            metric_column: str,
+             **additional_filters
     ):
         names = dataframe['display_name'].to_list()
         dataframe = dataframe.sort_values(by=metric_column, ascending=False, inplace=False)
@@ -581,9 +788,12 @@ class GraphVisualization():
 
     def _create_bar_chart(
             dataframe: pd.DataFrame,
-            metric_column: str):
+            metric_column: str,
+             **additional_filters
+             ):
         
             dataframe = dataframe.sort_values(by=metric_column, ascending=False)
+            
             names = dataframe['display_name'].to_list()
             
             '''
@@ -654,7 +864,9 @@ class GraphVisualization():
             return echart_config
 
     def _create_bubble_chart(dataframe : pd.DataFrame, 
-                            metric_column : str):
+                            metric_column : str,
+                             **additional_filters
+                             ):
         """
         Generates an interactive Packed Circle Chart using the ECharts graph type
         with a force-directed layout.
@@ -713,10 +925,16 @@ class GraphVisualization():
 
     def _create_treemap_chart(
             dataframe: pd.DataFrame,
-            metric_column: str
+            metric_column: str,
+             **additional_filters
     ):
+        
+        colors = config_colors
+        for k, v in additional_filters.items():
+            dataframe = dataframe[dataframe[k]==v]
 
         cleaned_title : str = metric_column.replace('_', ' ')
+        
         '''
         'tooltip': {
             'trigger': 'item',
@@ -724,14 +942,20 @@ class GraphVisualization():
         },
         '''
 
-        colors = config_colors
-
-        treemap_data = [
-            {
-                'name': row['display_name'],
-                'value': row[metric_column]
-            } for _, row in dataframe.iterrows()
-        ]
+        if dataframe[metric_column].dtype == 'object':
+            dictionary = dataframe.head(1).iloc[0][metric_column]
+            sorted_items = dict(sorted(dictionary.items()))
+            treemap_data = [
+                 {'name': name, 'value': value}
+                 for name, value in sorted_items.items()
+            ]
+        else:
+            treemap_data = [
+                {
+                    'name': row['display_name'],
+                    'value': row[metric_column]
+                } for _, row in dataframe.iterrows()
+            ]
 
         echart_config = {
             'color': colors,
@@ -765,8 +989,6 @@ class GraphVisualization():
 
         return echart_config
         
-        
-
     supported_graphs = {
         VisualizationType.BUBBLE_CHART : _create_bubble_chart,
         VisualizationType.BAR_CHART: _create_bar_chart,
@@ -774,7 +996,8 @@ class GraphVisualization():
         VisualizationType.THEME_RIVER_CHART: _create_theme_river_chart,
         VisualizationType.BAR_RACE_CHART: _create_bar_race_chart,
         VisualizationType.STACKED_AREA_CHART: _create_stacked_area_chart,
-        VisualizationType.SMOOTHED_LINE_CHART: _create_smoothed_line_chart
+        VisualizationType.SMOOTHED_LINE_CHART: _create_smoothed_line_chart,
+        VisualizationType.PIE_CHART : _create_pie_chart
     }
     
     @pn.cache
@@ -784,37 +1007,61 @@ class GraphVisualization():
         dataframe: pd.DataFrame,
         all_columns: Iterable[str],
         height: int = GRAPH_HEIGHT,
-        width: int = GRAPH_WIDTH
-    ) -> pn.Column:
+        width: int = GRAPH_WIDTH,
+        additional_filters: Iterable[str] = []
+        ) -> pn.Column:
         fx=self.supported_graphs.get(graph_type, None)
 
         if fx is None:
             raise Exception(f"Unsupported graph type: {graph_type}")
 
+
         '''
         Change the metrics into something more readable
         '''
-        options = {}
+        def clean_options(all_columns):
+            options = {}
 
-        # Have to explicitly loop through because of difficulties with Panel
-        for column in all_columns:
-            split = column.split('_')
-            res = ''
+            # Have to explicitly loop through because of difficulties with Panel
+            for column in all_columns:
+                split = column.split('_')
+                res = ''
 
-            for word in split:
-                res+=' '+word.capitalize() if res else word.capitalize()
+                for word in split:
+                    res+=' '+word.capitalize() if res else word.capitalize()
 
-            options[res] = column
+                options[res] = column
+            return options
         
-        metric_selector = pn.widgets.Select(name='Select Metric', options=options, value=all_columns[0])
-    
+        metric_selector = pn.widgets.Select(name='Select Metric', options=clean_options(all_columns), value=all_columns[0])
+        
+        additional_selectors = {}
+        if additional_filters:
+            for filter in additional_filters:
+
+                # If using id, just show the display name.
+                if filter == 'id':
+                    values = dict(zip(dataframe['display_name'], dataframe['id']))
+                else:
+                    values = clean_options(dataframe[filter].unique())
+
+                filter_selector = pn.widgets.Select(name=f'''Filter: {filter.capitalize() if filter != 'id' else 'Name'}''',
+                                                    options=values,
+                                                    value=next(iter(values.values())))
+                additional_selectors[filter] = filter_selector
+
         # Bind the widget to the reusable function
-        interactive_chart = pn.bind(fx, dataframe=dataframe, metric_column=metric_selector)
+        interactive_chart = pn.bind(fx, 
+                                    dataframe=dataframe, 
+                                    metric_column=metric_selector,
+                                    **additional_selectors
+                                    )
 
         if len(all_columns) > 1:
             chart = pn.Row(
                 ECharts(interactive_chart, height=height, width=width),
-                pn.Column(metric_selector)
+                pn.Column(metric_selector,
+                          *additional_selectors.values())
             )
         else:
             chart = ECharts(interactive_chart, height=height, width=width)
@@ -826,7 +1073,8 @@ class GraphVisualization():
         graph_types: Iterable[VisualizationType],
         dataframe: pd.DataFrame,
         data_columns: Iterable[str],
-        title: str = ''
+        title: str = '',
+        additional_filters = []
     ) -> pn.Column:
 
         options = { type.value : type  for type in graph_types }
@@ -839,13 +1087,18 @@ class GraphVisualization():
 
         return pn.Column(
             pn.Row(
-                pn.pane.Markdown('#### '+title), graph_selector
+                pn.pane.Markdown(f"""
+                                 <a id="{title}"></a> 
+                                 #### {title}"""
+                                ),
+                                graph_selector
             ),
             pn.bind(self.create_graph, graph_type=graph_selector, 
                 dataframe=dataframe, 
                 all_columns=data_columns,
                 width=GRAPH_WIDTH,
-                height=GRAPH_HEIGHT
+                height=GRAPH_HEIGHT,
+                additional_filters=additional_filters
             ),
         )
 
