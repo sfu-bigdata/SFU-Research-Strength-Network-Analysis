@@ -7,6 +7,7 @@ DATABASE_OUTPUT_DIR = BASE_DIR.joinpath(environ.get('DATABASE_IMPORT_DIR', 'data
 DATABASE_TEST_DATA_INPUT_DIR = BASE_DIR.joinpath('tests','data', 'output')
 
 GEOGRAPHIC_DATA_LOCATION = BASE_DIR.joinpath('inputs', 'api', 'country_list.json')
+WORLD_JSON = BASE_DIR.joinpath('inputs', 'geo', 'world.json')
 
 VISUALIZATION_DATA_DIR = BASE_DIR.joinpath('visualization_data')
 

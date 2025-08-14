@@ -15,12 +15,29 @@ from typing import Iterable
 import panel as pn
 from panel.pane import ECharts
 import numpy as np
+import param
+import requests 
+import plotly.express as px
 
 default_colors = [
     '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', 
     '#fc8452', '#9a60b4', '#ea7ccc', '#2c3e50', '#d35400', '#8e44ad',
     '#16a085', '#f1c40f', '#c0392b', '#1abc9c'
 ]
+
+def clean_options(all_columns):
+            options = {}
+
+            # Have to explicitly loop through because of difficulties with Panel
+            for column in all_columns:
+                split = column.split('_')
+                res = ''
+
+                for word in split:
+                    res+=' '+word.capitalize() if res else word.capitalize()
+
+                options[res] = column
+            return options
 
 class VisualizationData():
 
@@ -231,9 +248,6 @@ class VisualizationData():
         
         return
 
-    def summary_topics_counts(self):
-        pass
-
     def works_analysis(self):
         '''
         Get more in depth information relating to works by institution
@@ -343,7 +357,167 @@ class VisualizationData():
         
         return
 
+    def topics_works(self):
+        '''
+        Get works data by institution and topic
+        '''
 
+        sfu_15 = ObjectNames[NodeType.SFU_U15_institution]
+        afl = ObjectNames[NodeType.affiliated_institution]
+        authorship = ObjectNames[NodeType.authorship]
+        author = ObjectNames[NodeType.author]
+        paper = ObjectNames[NodeType.work]
+
+        '''
+        Hierarchy is domain -> field -> subfield -> topic
+        '''
+        topic = ObjectNames[NodeType.topic]
+        subfield = ObjectNames[NodeType.subfield]
+        field = ObjectNames[NodeType.field]
+        domain = ObjectNames[NodeType.domain]
+
+        topics_query = f"""
+            MATCH ({sfu_15.prefix}:{sfu_15.name} {{lineage_root: TRUE}})
+            OPTIONAL MATCH ({sfu_15.prefix})<-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution),(NodeType.SFU_U15_institution)]}]-({afl.prefix}:{afl.name})<-[:{Relationships.RelationshipTypeMap[(NodeType.authorship, NodeType.affiliated_institution)]}]-({authorship.prefix}:{authorship.name})-[:{Relationships.RelationshipTypeMap[(NodeType.authorship), (NodeType.work)]}]->({paper.prefix}:{paper.name})-[:{Relationships.RelationshipTypeMap[(NodeType.work), (NodeType.topic)]}]->({topic.prefix}:{topic.name})-[:{Relationships.RelationshipTypeMap[(NodeType.topic), (NodeType.subfield)]}]->({subfield.prefix}:{subfield.name})-[:{Relationships.RelationshipTypeMap[(NodeType.subfield), (NodeType.field)]}]->({field.prefix}:{field.name})-[:{Relationships.RelationshipTypeMap[(NodeType.field), (NodeType.domain)]}]->({domain.prefix}:{domain.name})
+            
+            WITH DISTINCT {sfu_15.prefix}, {domain.prefix}, {field.prefix}, {subfield.prefix}, {topic.prefix},
+                count({paper.prefix}) as total_works,
+                sum({paper.prefix}.countries_distinct_count) as sum_distinct_countries,
+                sum({paper.prefix}.citation_normalized_percentile) as sum_citation_normalized_percentile,
+                sum({paper.prefix}.fwci) as sum_fwci,
+                sum({paper.prefix}.institutions_distinct_count) as sum_distinct_institutions,
+                sum({paper.prefix}.apc_paid) as sum_apc_paid
+                
+            RETURN 
+                {sfu_15.prefix}.id as id, 
+                {sfu_15.prefix}.display_name as institution_display_name,
+                {domain.prefix}.id as domain_id,
+                {domain.prefix}.display_name as domain_display_name,
+                {field.prefix}.id as field_id,
+                {field.prefix}.display_name as field_display_name,
+                {subfield.prefix}.id as subfield_id,
+                {subfield.prefix}.display_name as subfield_display_name,
+                {topic.prefix}.id as topic_id,
+                {topic.prefix}.display_name as topic_display_name,
+                total_works,
+                sum_distinct_countries,
+                sum_distinct_institutions,
+                sum_fwci,
+                sum_citation_normalized_percentile,
+                sum_apc_paid
+
+        """
+
+        res = self.client(topics_query)
+        
+        path = VisualizationDataPaths.topics_works.value
+        print("Writing dataframe to directory ", path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        res.to_csv(path, index=False)
+        
+        return
+
+    def geographic_collaborations(self):
+        '''
+        What institutions and what countries are SFU authors working with?
+        '''
+        sfu_15 = ObjectNames[NodeType.SFU_U15_institution]
+        afl = ObjectNames[NodeType.affiliated_institution]
+        authorship = ObjectNames[NodeType.authorship]
+        paper = ObjectNames[NodeType.work]
+        geo = ObjectNames[NodeType.geographic]
+        sfu_afl = 'sfu_'+afl.prefix
+
+        query=f"""
+            MATCH ({sfu_afl}:{afl.name})-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution), (NodeType.SFU_U15_institution)]}]->(:{sfu_15.name} {{id: '{SFU_TARGET_INSTITUTION_ID}'}})
+            
+            MATCH ({sfu_afl})<-[:{Relationships.RelationshipTypeMap[(NodeType.authorship),(NodeType.affiliated_institution)]}]-(:{authorship.name})-[:{Relationships.RelationshipTypeMap[(NodeType.authorship),(NodeType.work)]}]->({paper.prefix}:{paper.name})
+            WITH {sfu_afl}, COLLECT(DISTINCT {paper.prefix}) AS works
+
+            UNWIND works AS w
+
+            MATCH (w)<-[:{Relationships.RelationshipTypeMap[(NodeType.authorship), (NodeType.work)]}]-(:{authorship.name})-[:{Relationships.RelationshipTypeMap[(NodeType.authorship), (NodeType.affiliated_institution)]}]->(collaborating_AFL_INS:{afl.name})-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution), (NodeType.geographic)]}]->({geo.prefix}:{geo.name})
+
+            WHERE collaborating_AFL_INS <> {sfu_afl}
+
+            RETURN
+                {geo.prefix}.id as id,
+                {geo.prefix}.continent as continent,
+                {geo.prefix}.country_name AS country,
+                count({geo.prefix}) AS number_of_collaborations
+            ORDER BY number_of_collaborations DESC        
+        """
+        
+        res = self.client(query)
+        
+        path = VisualizationDataPaths.geographic_collaborations.value
+        print("Writing dataframe to directory ", path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        res.to_csv(path, index=False)
+        
+        return
+
+    def geographic_topics_collaborations(self):
+        # Define your object prefixes and the target institution ID
+        sfu_15 = ObjectNames[NodeType.SFU_U15_institution]
+        afl = ObjectNames[NodeType.affiliated_institution]
+        authorship = ObjectNames[NodeType.authorship]
+        paper = ObjectNames[NodeType.work]
+        topic = ObjectNames[NodeType.topic]
+        subfield = ObjectNames[NodeType.subfield]
+        field = ObjectNames[NodeType.field]
+        domain = ObjectNames[NodeType.domain]
+        geo = ObjectNames[NodeType.geographic]
+        sfu_afl = 'sfu_afl' # A specific variable name for the starting institution
+
+        query = f"""
+        MATCH ({sfu_afl}:{afl.name})-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution), (NodeType.SFU_U15_institution)]}]->(:{sfu_15.name} {{id: '{SFU_TARGET_INSTITUTION_ID}'}})
+        MATCH ({sfu_afl})<-[:{Relationships.RelationshipTypeMap[(NodeType.authorship),(NodeType.affiliated_institution)]}]-(:{authorship.name})-[:{Relationships.RelationshipTypeMap[(NodeType.authorship),(NodeType.work)]}]->(w:{paper.name})
+        WITH {sfu_afl}, COLLECT(DISTINCT w) AS works
+
+        UNWIND works AS w
+        MATCH (w)-[:{Relationships.RelationshipTypeMap[(NodeType.work), (NodeType.topic)]}]->(t:{topic.name})
+        WITH {sfu_afl}, w, t
+
+        MATCH (w)<-[:{Relationships.RelationshipTypeMap[(NodeType.authorship), (NodeType.work)]}]-(:{authorship.name})-[:{Relationships.RelationshipTypeMap[(NodeType.authorship), (NodeType.affiliated_institution)]}]->(collaborating_AFL_INS:{afl.name})-[:{Relationships.RelationshipTypeMap[(NodeType.affiliated_institution), (NodeType.geographic)]}]->(g:{geo.name})
+
+        WHERE collaborating_AFL_INS <> {sfu_afl}
+
+        WITH w, t, g
+        MATCH (t)-[:{Relationships.RelationshipTypeMap[(NodeType.topic), (NodeType.subfield)]}]->(sf:{subfield.name})-[:{Relationships.RelationshipTypeMap[(NodeType.subfield), (NodeType.field)]}]->(f:{field.name})-[:{Relationships.RelationshipTypeMap[(NodeType.field), (NodeType.domain)]}]->(d:{domain.name})
+
+        RETURN
+            d.id AS domain_id,
+            d.display_name AS domain_display_name,
+            f.id AS field_id,
+            f.display_name AS field_display_name,
+            sf.id AS subfield_id,
+            sf.display_name AS subfield_display_name,
+            t.id AS topic_id,
+            t.display_name AS topic_display_name,
+            g.id as country_id,
+            g.continent as continent,
+            g.country_name AS country_name,
+            count(g) AS number_of_collaborations,
+            avg(w.countries_distinct_count) as avg_distinct_countries,
+            avg(w.citation_normalized_percentile) as avg_citation_normalized_percentile,
+            avg(w.fwci) as avg_fwci,
+            avg(w.institutions_distinct_count) as avg_distinct_institutions,
+            avg(w.apc_paid) as avg_apc_paid
+        ORDER BY
+            domain_display_name, field_display_name, subfield_display_name, topic_display_name, number_of_collaborations DESC
+        """
+        res = self.client(query)
+        
+        path = VisualizationDataPaths.geographic_topics_collaborations.value
+        print("Writing dataframe to directory ", path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        res.to_csv(path, index=False)
+        
+        return
 
 class VisualizationType(Enum):
     BUBBLE_CHART = 'Bubble Chart'
@@ -354,8 +528,10 @@ class VisualizationType(Enum):
     STACKED_AREA_CHART = 'Stacked Area Chart'
     SMOOTHED_LINE_CHART = 'Smoothed Line Chart'
     PIE_CHART = 'Pie Chart'
+    CHORD_CHART = 'Chord Chart'
+    CHOROPLETH_MAP = 'Choropleth Map'
 
-class GraphVisualization():
+class GraphVisualization:
 
     def _create_pie_chart(
         dataframe: pd.DataFrame, 
@@ -508,6 +684,7 @@ class GraphVisualization():
         }
         
         return echart_config
+
 
     def _create_stacked_area_chart(dataframe: pd.DataFrame, 
                                metric_column: str,
@@ -988,7 +1165,183 @@ class GraphVisualization():
         }
 
         return echart_config
+
+    def _create_choropleth_map(
+            dataframe: pd.DataFrame,
+            metric_column: str,
+            **additional_filters
+        ):
+        """
+        Generates a Plotly Choropleth map figure.
+
+        NOTE: This function returns a Plotly Figure object, not an ECharts
+        dictionary. The calling 'create_graph' method must wrap this
+        output in a `panel.pane.Plotly` pane.
+
+        Args:
+            dataframe (pd.DataFrame): The input data. Must contain a column
+                with ISO 3166-1 alpha-3 country codes (expected as 'id') and a
+                column with full country names (expected as 'country').
+            metric_column (str): The name of the column to use for the color
+                and hover data.
+            **additional_filters: Additional filters (unused in this chart type).
+
+        Returns:
+            plotly.graph_objects.Figure: The configured Plotly choropleth map.
+        """
+        # Make a copy to avoid modifying the original DataFrame
+        df = dataframe.copy()
+
+        df[metric_column] = pd.to_numeric(df[metric_column], errors='coerce')
+        # Remove Canada from the dataset
+        df = df[df['country'] != 'Canada']
         
+
+        # Clean up the metric column name for display in titles and labels
+        cleaned_title = metric_column.replace('_', ' ').title()
+        
+
+        # Create the Choropleth Map using Plotly Express
+        fig = px.choropleth(
+            df,
+            locations='country',
+            locationmode='country names',
+            color=metric_column,        # Column with data to map to color
+            hover_name='country',       # Column to display when hovering
+            hover_data={metric_column: ':,d'}, # Format hover data with commas
+            color_continuous_scale=px.colors.sequential.Viridis,
+            title="",
+            labels={metric_column: cleaned_title},
+            height=GRAPH_HEIGHT,
+            width=GRAPH_WIDTH
+        )
+
+        # Customize the map's appearance for a cleaner look
+        fig.update_layout(
+            margin=dict(l=20, r=20, t=50, b=20), # Adjust margins for a tight fit
+            geo=dict(
+                showframe=False,
+                showcoastlines=False,
+                projection_type='equirectangular' # A common map projection
+            )
+        )
+
+        return fig
+    
+    def _create_chord_diagram(
+            dataframe: pd.DataFrame,
+            metric_column: str,
+            top_n: int,
+            **additional_filters
+        ):
+        """
+        Generates a configuration for a circular hub-and-spoke graph, visually
+        similar to a chord diagram, showing relationships from a central node.
+
+        This function is adapted to fit the standard visualization pattern, using a
+        dynamic metric column to determine the top N relationships to display and
+        their corresponding weights.
+
+        Args:
+            dataframe (pd.DataFrame): The input data. It is expected to contain a
+                'display_name' column for the outer nodes and a numeric metric column.
+            metric_column (str): The name of the column to use for ranking and
+                sizing the connections. This is provided by the interactive selector.
+            **additional_filters: Catches any additional filter selections from the UI,
+                though they are not used in this specific chart's logic.
+
+        Returns:
+            dict: A dictionary containing the ECharts configuration for the graph.
+        """
+        # --- Configuration ---
+        # Define how many of the top collaborators to display.
+        # This can be adjusted as needed.
+        
+        # --- Prepare data for ECharts ---
+        # Filter the dataframe to get the top N collaborators based on the selected metric.
+        # It's crucial that this uses `metric_column` to be dynamic.
+        df_top = dataframe.nlargest(top_n, metric_column).copy()
+
+        # If the dataframe is empty after filtering, return an empty config.
+        if df_top.empty:
+            return {}
+
+        # Create the central "hub" node (e.g., 'SFU').
+        central_node = {
+            'name': 'SFU',
+            'symbolSize': 40,
+            # The value of the hub is the sum of the metric from the top collaborators.
+            'value': df_top[metric_column].sum(),
+            'x': 400, # Position in the center
+            'y': 350,
+            'label': {'fontSize': 16, 'fontWeight': 'bold'},
+            'itemStyle': {'color': '#c23531'} # A distinct color for the hub
+        }
+        
+        # Create the outer nodes (e.g., countries) arranged in a circle.
+        # Their size and value are determined by the selected metric.
+        country_nodes = [
+            {
+                'name': row['display_name'],
+                'symbolSize': 10 + row[metric_column]**0.3, # Scale size based on metric
+                'value': row[metric_column]
+            }
+            for _, row in df_top.iterrows()
+        ]
+        
+        nodes = [central_node] + country_nodes
+        
+        # Create the links (chords) from the central hub to each outer node.
+        links = [
+            {
+                'source': 'SFU',
+                'target': row['display_name'],
+                'value': row[metric_column],
+                'lineStyle': {'width': 2 + row[metric_column]**0.3, 'opacity': 0.6}
+            }
+            for _, row in df_top.iterrows()
+        ]
+
+        # Clean up the metric name for display in the tooltip
+        cleaned_title = metric_column.replace('_', ' ').title()
+        
+        # --- Build the ECharts Configuration ---
+        echart_config = {
+            'tooltip': {
+                'trigger': 'item',
+                'formatter': f'{{b}}<br/>{cleaned_title}: {{c}}'
+            },
+            'series': [{
+                'type': 'graph',
+                'layout': 'circular', # This arranges outer nodes in a circle
+                'circular': {
+                    'rotateLabel': True
+                },
+                'data': nodes,
+                'links': links,
+                'roam': True,
+                'label': {
+                    'show': True,
+                    'position': 'right',
+                    'formatter': '{b}'
+                },
+                'edgeSymbol': ['none', 'arrow'], # Show direction from SFU outwards
+                'edgeSymbolSize': [4, 10],
+                'lineStyle': {
+                    'color': 'source',
+                    'curveness': 0.3
+                },
+                'emphasis': {
+                    'focus': 'adjacency',
+                    'lineStyle': {
+                        'width': 10
+                    }
+                }
+            }]
+        }
+        return echart_config
+
+
     supported_graphs = {
         VisualizationType.BUBBLE_CHART : _create_bubble_chart,
         VisualizationType.BAR_CHART: _create_bar_chart,
@@ -997,8 +1350,12 @@ class GraphVisualization():
         VisualizationType.BAR_RACE_CHART: _create_bar_race_chart,
         VisualizationType.STACKED_AREA_CHART: _create_stacked_area_chart,
         VisualizationType.SMOOTHED_LINE_CHART: _create_smoothed_line_chart,
-        VisualizationType.PIE_CHART : _create_pie_chart
+        VisualizationType.PIE_CHART : _create_pie_chart,
+        VisualizationType.CHORD_CHART : _create_chord_diagram,
+        VisualizationType.CHOROPLETH_MAP: _create_choropleth_map
     }
+
+    placeholder = '-'*15+'Not Available'+'-'*15
     
     @pn.cache
     def create_graph(
@@ -1019,19 +1376,7 @@ class GraphVisualization():
         '''
         Change the metrics into something more readable
         '''
-        def clean_options(all_columns):
-            options = {}
-
-            # Have to explicitly loop through because of difficulties with Panel
-            for column in all_columns:
-                split = column.split('_')
-                res = ''
-
-                for word in split:
-                    res+=' '+word.capitalize() if res else word.capitalize()
-
-                options[res] = column
-            return options
+        
         
         metric_selector = pn.widgets.Select(name='Select Metric', options=clean_options(all_columns), value=all_columns[0])
         
@@ -1050,24 +1395,47 @@ class GraphVisualization():
                                                     value=next(iter(values.values())))
                 additional_selectors[filter] = filter_selector
 
-        # Bind the widget to the reusable function
-        interactive_chart = pn.bind(fx, 
-                                    dataframe=dataframe, 
-                                    metric_column=metric_selector,
-                                    **additional_selectors
-                                    )
+        
+        
+        # 1. Prepare a list for all control widgets and a dictionary for binding arguments
+        control_widgets = [metric_selector]
+        control_widgets.extend(additional_selectors.values())
 
-        if len(all_columns) > 1:
+        bind_kwargs = {
+            'dataframe': dataframe,
+            'metric_column': metric_selector,
+            **additional_selectors
+        }
+
+        # 2. Conditionally create the slider and add it to the widgets and binding arguments
+        if graph_type == VisualizationType.CHORD_CHART:
+            top_n_slider = pn.widgets.IntSlider(
+                name='Top N Collaborators', start=5, end=len(dataframe), step=1, value=15
+            )
+            control_widgets.append(top_n_slider)
+            bind_kwargs['top_n'] = top_n_slider # Add the new widget to the binding
+
+        # 3. Bind the function with the dynamically assembled arguments
+        interactive_chart = pn.bind(fx, **bind_kwargs)
+
+
+        if graph_type == VisualizationType.CHOROPLETH_MAP:
+            chart_pane = pn.pane.Plotly(interactive_chart, height=height, width=width, config={'displayModeBar': False})
+        else:
+            chart_pane = ECharts(interactive_chart, height=height, width=width)
+
+        # Assemble the final layout
+        if len(all_columns) > 1 or graph_type == VisualizationType.CHORD_CHART:
             chart = pn.Row(
-                ECharts(interactive_chart, height=height, width=width),
-                pn.Column(metric_selector,
-                          *additional_selectors.values())
+                chart_pane,
+                # Use the list of control widgets we built
+                pn.Column(*control_widgets)
             )
         else:
-            chart = ECharts(interactive_chart, height=height, width=width)
+            chart = chart_pane
 
         return chart
-    
+        
     def create_choice_graph(
         self,
         graph_types: Iterable[VisualizationType],
@@ -1101,5 +1469,158 @@ class GraphVisualization():
                 additional_filters=additional_filters
             ),
         )
+    
+    class topic_hierarchy(param.Parameterized):
+        """
+        An interactive, hierarchical selector for exploring aggregated topic data.
+        """
+        # 1. Declare parameters for Panel to turn into widgets.
+        graph_type = param.ObjectSelector(label='Select Chart Type')
+        domain = param.Selector(label='Domain')
+        field = param.Selector(label='Field')
+        subfield = param.Selector(label='Subfield')
+        topic = param.Selector(label='Topic')
 
-        
+        def __init__(self, graph_types: Iterable[VisualizationType], dataframes: dict, filters: list, **params):
+            super().__init__(**params) # Call parent constructor first
+
+            # --- Setup ---
+            self.dataframes = dataframes
+            # Create a more accessible dictionary for filter column names
+            self.filters = {item[0].split('_')[0]: (item[0], item[1]) for item in filters}
+            self.placeholder = '-'*15+' Not Available '+'-'*15
+            self.viz_methods = GraphVisualization() # To access create_graph
+
+            # --- Initialize Selector Options ---
+            # Set the available graph types
+            self.param.graph_type.objects = {t.value: t for t in graph_types}
+            self.graph_type = graph_types[0] if graph_types else None
+
+            # Populate the first selector in the hierarchy
+            self._update_domain_options()
+
+        def _get_options(self, df, name_col, value_col):
+            """Helper to create a dictionary of {display_name: id} for selectors."""
+            if df.empty or name_col not in df.columns or value_col not in df.columns:
+                return {}
+            # Get unique pairs and sort by the display name
+            unique_df = df[[name_col, value_col]].drop_duplicates().sort_values(by=name_col)
+            return dict(zip(unique_df[name_col], unique_df[value_col]))
+
+        def _update_domain_options(self):
+            name_col, val_col = self.filters['domain']
+            domain_df = self.dataframes['domain']
+            options = self._get_options(domain_df, name_col, val_col)
+            self.param.domain.objects = options
+            self.domain = next(iter(options.values()), None)
+
+        @param.depends('domain', watch=True)
+        def _update_field_options(self):
+            domain_id = self.domain
+            field_df = self.dataframes['field']
+            domain_id_col = self.filters['domain'][1] # e.g., 'domain_id'
+            name_col, val_col = self.filters['field']
+
+            filtered_df = field_df[field_df[domain_id_col] == domain_id]
+            options = {'--No Selection -- ' : None, **self._get_options(filtered_df, name_col, val_col)}
+
+
+            self.param.field.objects = options if options else {self.placeholder: None}
+            self.field = next(iter(options.values()), self.placeholder)
+
+        @param.depends('field', watch=True)
+        def _update_subfield_options(self):
+            field_id = self.field
+            if field_id == self.placeholder:
+                self.param.subfield.objects = {self.placeholder: None}
+                self.subfield = self.placeholder
+                return
+
+            subfield_df = self.dataframes['subfield']
+            field_id_col = self.filters['field'][1] # e.g., 'field_id'
+            name_col, val_col = self.filters['subfield']
+
+            filtered_df = subfield_df[subfield_df[field_id_col] == field_id]
+            options = {'--No Selection -- ' : None, **self._get_options(filtered_df, name_col, val_col)}
+
+            self.param.subfield.objects = options if options else {self.placeholder: None}
+            self.subfield = next(iter(options.values()), self.placeholder)
+
+        @param.depends('subfield', watch=True)
+        def _update_topic_options(self):
+            subfield_id = self.subfield
+            if subfield_id == self.placeholder:
+                self.param.topic.objects = {self.placeholder: self.placeholder}
+                self.topic = self.placeholder
+                return
+
+            topic_df = self.dataframes['topic']
+            subfield_id_col = self.filters['subfield'][1] # e.g., 'subfield_id'
+            name_col, val_col = self.filters['topic']
+
+            filtered_df = topic_df[topic_df[subfield_id_col] == subfield_id]
+            options = {'--No Selection -- ' : None, **self._get_options(filtered_df, name_col, val_col)}
+
+            self.param.topic.objects = options if options else {self.placeholder: self.placeholder}
+            self.topic = next(iter(options.values()), self.placeholder)
+
+        @param.depends('domain', 'field', 'subfield', 'topic', 'graph_type')
+        def view(self):
+            """
+            This method is decorated with `param.depends` (without `watch=True`),
+            so it returns a viewable object that automatically updates when its dependencies change.
+            """
+            if self.domain is None or self.domain == self.placeholder:
+                return pn.pane.Markdown("### Please make a selection to view data.",
+                                            styles={'text-align': 'center', 'padding-top': '50px'})
+
+            # *** THIS IS THE CORRECTED LOGIC ***
+            # 1. Use the correct dataframe from the dictionary
+            scope = ''
+
+            for level in ('topic', 'subfield', 'field', 'domain'):
+                if self.__getattribute__(level):
+                    scope = level
+                    break
+
+            data_df = self.dataframes[scope]
+            data_id_col = self.filters[scope][1]   
+
+            # Filter for all institutions' data for the one selected topic
+            selected_topic_data = data_df[data_df[data_id_col] == self.__getattribute__(scope)].copy()
+
+            # The create_graph function expects a 'display_name' column for labels.
+            selected_topic_data.rename(columns={'institution_display_name': 'display_name'}, inplace=True)
+
+            if selected_topic_data.empty:
+                return pn.pane.Markdown(f"No data available for the selected {scope} (ID: {self.__getattribute__(scope)}).")
+
+            # 2. Use the correct metric column names produced by process_topics_dataframes
+            metric_columns = [
+                'total_works',
+                'avg_distinct_countries',
+                'avg_distinct_institutions',
+                'avg_fwci',
+                'avg_citation_normalized_percentile',
+                'avg_apc_paid'
+            ]
+
+            # Use the create_graph method from the outer class instance
+            return self.viz_methods.create_graph(
+                graph_type=self.graph_type,
+                dataframe=selected_topic_data,
+                all_columns=metric_columns,
+                height=GRAPH_HEIGHT,
+                width=GRAPH_WIDTH
+            )
+
+        def layout(self):
+            """Assembles the final layout of controls and the view pane."""
+            controls = pn.Row(
+                self.param.domain,
+                self.param.field,
+                self.param.subfield,
+                self.param.topic
+            )
+            # The `self.view` method returns the updatable graph pane
+            return pn.Column(self.param.graph_type, controls, self.view)

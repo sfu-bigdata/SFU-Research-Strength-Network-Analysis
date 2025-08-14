@@ -13,7 +13,10 @@ class VisualizationDataPaths(Enum):
     
     work_analysis = VISUALIZATION_DATA_DIR.joinpath('work_analysis.csv')
     author_analysis = VISUALIZATION_DATA_DIR.joinpath('author_analysis.csv')
-    
+    topics_works = VISUALIZATION_DATA_DIR.joinpath('topics_works.csv')
+    geographic_collaborations = VISUALIZATION_DATA_DIR.joinpath('geographic_collaborations.csv')
+    geographic_topics_collaborations = VISUALIZATION_DATA_DIR.joinpath("geographic_topics_collaborations.csv")
+
 colors =[
     '#0077BB',  # Blue
     '#EE7733',  # Orange

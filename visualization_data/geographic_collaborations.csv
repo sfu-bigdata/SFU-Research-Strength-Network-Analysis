@@ -1,0 +1,177 @@
+id,continent,country,number_of_collaborations
+CA,North America,Canada,112131
+US,North America,United States of America,77377
+GB,Europe,United Kingdom of Great Britain and Northern Ireland,18295
+FR,Europe,France,17587
+CN,Asia,China,12228
+DE,Europe,Germany,9732
+AU,Oceania,Australia,8160
+IT,Europe,Italy,7740
+ES,Europe,Spain,4435
+JP,Asia,Japan,3423
+NL,Europe,Netherlands,3362
+SE,Europe,Sweden,3341
+BR,South America,Brazil,2943
+CH,Europe,Switzerland,2550
+KR,Asia,"Korea, Republic of",2536
+FI,Europe,Finland,2073
+IN,Asia,India,2058
+ZA,Africa,South Africa,1956
+RU,Europe,Russian Federation,1926
+DK,Europe,Denmark,1914
+HK,Asia,Hong Kong,1634
+NO,Europe,Norway,1594
+IR,Asia,"Iran, Islamic Republic of",1326
+IL,Asia,Israel,1186
+NZ,Oceania,New Zealand,1059
+CZ,Europe,Czechia,1026
+AT,Europe,Austria,993
+MX,North America,Mexico,910
+TW,Asia,"Taiwan, Province of China",881
+SG,Asia,Singapore,870
+BE,Europe,Belgium,848
+PL,Europe,Poland,786
+AR,South America,Argentina,740
+IE,Europe,Ireland,719
+SK,Europe,Slovakia,611
+PK,Asia,Pakistan,603
+CL,South America,Chile,439
+TR,Asia,Turkey,436
+HU,Europe,Hungary,413
+UG,Africa,Uganda,402
+PT,Europe,Portugal,394
+EE,Europe,Estonia,362
+CO,South America,Colombia,347
+SI,Europe,Slovenia,340
+SA,Asia,Saudi Arabia,309
+MY,Asia,Malaysia,271
+SS,Africa,South Sudan,260
+AE,Asia,United Arab Emirates,252
+TH,Asia,Thailand,216
+RS,Europe,Serbia,205
+VN,Asia,Viet Nam,188
+BD,Asia,Bangladesh,183
+GR,Europe,Greece,174
+EC,South America,Ecuador,164
+ID,Asia,Indonesia,161
+MN,Asia,Mongolia,159
+KE,Africa,Kenya,158
+AM,Asia,Armenia,140
+NG,Africa,Nigeria,139
+IS,Europe,Iceland,137
+PH,Asia,Philippines,130
+CR,North America,Costa Rica,121
+QA,Asia,Qatar,119
+BO,South America,"Bolivia, Plurinational State of",115
+GH,Africa,Ghana,107
+ET,Africa,Ethiopia,103
+RO,Europe,Romania,102
+HR,Europe,Croatia,98
+LK,Asia,Sri Lanka,85
+PE,South America,Peru,74
+PR,North America,Puerto Rico,74
+MO,Asia,Macao,72
+CY,Asia,Cyprus,69
+EG,Africa,Egypt,68
+BG,Europe,Bulgaria,65
+KZ,Asia,Kazakhstan,61
+MZ,Africa,Mozambique,60
+RW,Africa,Rwanda,59
+PA,North America,Panama,59
+ZW,Africa,Zimbabwe,58
+CM,Africa,Cameroon,56
+UA,Europe,Ukraine,55
+MW,Africa,Malawi,50
+LT,Europe,Lithuania,42
+BW,Africa,Botswana,39
+MA,Africa,Morocco,35
+MD,Europe,"Moldova, Republic of",35
+LU,Europe,Luxembourg,34
+VE,South America,"Venezuela, Bolivarian Republic of",31
+MT,Europe,Malta,30
+LB,Asia,Lebanon,28
+BS,North America,Bahamas,28
+NP,Asia,Nepal,28
+GT,North America,Guatemala,27
+KW,Asia,Kuwait,26
+IQ,Asia,Iraq,24
+PS,Asia,"Palestine, State of",24
+KG,Asia,Kyrgyzstan,23
+BY,Europe,Belarus,22
+GL,North America,Greenland,22
+MM,Asia,Myanmar,21
+TZ,Africa,"Tanzania, United Republic of",20
+ZM,Africa,Zambia,19
+FJ,Oceania,Fiji,18
+AZ,Asia,Azerbaijan,17
+TN,Africa,Tunisia,16
+LV,Europe,Latvia,16
+JO,Asia,Jordan,16
+HN,North America,Honduras,16
+JM,North America,Jamaica,15
+CG,Africa,Congo,15
+UY,South America,Uruguay,15
+PF,Oceania,French Polynesia,15
+PG,Oceania,Papua New Guinea,14
+SN,Africa,Senegal,13
+GM,Africa,Gambia,13
+AF,Asia,Afghanistan,12
+BB,North America,Barbados,12
+DZ,Africa,Algeria,12
+SD,Africa,Sudan,11
+BI,Africa,Burundi,11
+GE,Asia,Georgia,11
+MV,Asia,Maldives,10
+OM,Asia,Oman,9
+TT,North America,Trinidad and Tobago,9
+BH,Asia,Bahrain,9
+BA,Europe,Bosnia and Herzegovina,9
+MC,Europe,Monaco,8
+BF,Africa,Burkina Faso,8
+CU,North America,Cuba,8
+MK,Europe,North Macedonia,8
+NE,Africa,Niger,8
+MG,Africa,Madagascar,7
+CD,Africa,"Congo, Democratic Republic of the",7
+UZ,Asia,Uzbekistan,7
+CI,Africa,Côte d'Ivoire,7
+FO,Europe,Faroe Islands,6
+NC,Oceania,New Caledonia,6
+VI,North America,"Virgin Islands, U.S.",5
+GD,North America,Grenada,5
+TJ,Asia,Tajikistan,5
+XK,Europe,Kosovo,4
+BM,North America,Bermuda,4
+YE,Asia,Yemen,4
+GF,South America,French Guiana,4
+BZ,North America,Belize,4
+ME,Europe,Montenegro,3
+AS,Oceania,American Samoa,3
+KH,Asia,Cambodia,3
+NI,North America,Nicaragua,3
+LA,Asia,Lao People's Democratic Republic,3
+PY,South America,Paraguay,3
+MU,Africa,Mauritius,3
+IM,Europe,Isle of Man,2
+DO,North America,Dominican Republic,2
+CW,North America,Curaçao,2
+RE,Africa,Réunion,2
+LR,Africa,Liberia,2
+NA,Africa,Namibia,2
+GP,North America,Guadeloupe,2
+FK,South America,Falkland Islands (Malvinas),2
+VG,North America,"Virgin Islands, British",1
+GA,Africa,Gabon,1
+TM,Asia,Turkmenistan,1
+BJ,Africa,Benin,1
+TO,Oceania,Tonga,1
+SV,North America,El Salvador,1
+SL,Africa,Sierra Leone,1
+BN,Asia,Brunei Darussalam,1
+MS,North America,Montserrat,1
+VU,Oceania,Vanuatu,1
+SY,Asia,Syrian Arab Republic,1
+PW,Oceania,Palau,1
+KI,Oceania,Kiribati,1
+CK,Oceania,Cook Islands,1
+SC,Africa,Seychelles,1

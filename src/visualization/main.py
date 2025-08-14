@@ -6,12 +6,15 @@ from . import css
 from .report import Report
 import param
 
-def display_report():
+def display_report(
+        save: bool = False
+):
     '''
     Generate and display the Panel report template
     '''
     pn.extension(
         'echarts',
+        'tabulator',
         raw_css=[css.GLOBAL_CSS]
     )
 
@@ -71,5 +74,9 @@ def display_report():
                 ],
                 main=[serve_page]
             )
+    if (save):
+        from config import BASE_DIR
+        template.save(BASE_DIR.joinpath('report.html'))
 
     pn.serve(template)
+
