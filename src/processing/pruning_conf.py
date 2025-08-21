@@ -210,7 +210,7 @@ class PruningFunction:
         ],
 
         'locations': [
-            pl.col('locations').list.eval(pl.element().struct.field("source").struct.field("issn_l")).alias('issns')
+            pl.col('locations').list.eval(pl.element().struct.field("source").struct.field("issn_l")).list.drop_nulls().alias('issns')
         ]
     }
         
@@ -617,7 +617,7 @@ class SecondaryInformation():
 
             issn_data = data.select(
                 pl.col('id'),
-                pl.col('issns'),
+                pl.col('issns').drop_nulls(),
             ).explode('issns')\
             .drop_nulls().unique()
             

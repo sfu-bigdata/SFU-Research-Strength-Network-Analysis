@@ -519,6 +519,37 @@ class VisualizationData():
         
         return
 
+    def query_all_information(self):
+        print("Performing all aggregations.")
+        print("Starting summary node information.")
+        self.summary_node_information()
+        print("Finished summary node information.")
+        print("Starting summary nodes by institution")
+        self.summary_nodes_by_institution()
+        print("Finished summary nodes by institution.")
+        print("Starting summary nodes by author.")
+        self.summary_nodes_by_author()
+        print("Finished summary nodes by author")
+        print("Starting summary counts by year.")
+        self.summary_counts_by_year()
+        print("Finished summary counts by year.")
+        print("Starting works analysis.")
+        self.works_analysis()
+        print("Finished works analysis.")
+        print("Starting authors analysis.")
+        self.authors_analysis()
+        print("Finished authors analysis.")
+        print("Start topics works analysis.")
+        self.topics_works()
+        print("Finished topics works analysis.")
+        print("Starting geographic collaboration analysis.")
+        self.geographic_collaborations()
+        print("Finished geographic collaboration analysis.")
+        print("Starting geographic topics analysis.")
+        self.geographic_topics_collaborations()
+        print("Finished geographic topics analysis.")
+        print("Finished aggregations.")
+
 class VisualizationType(Enum):
     BUBBLE_CHART = 'Bubble Chart'
     BAR_CHART = 'Bar Chart'
@@ -917,6 +948,7 @@ class GraphVisualization:
         cleaned_title: str = metric_column.replace('_', ' ')
 
         echart_config = {
+            'colors': default_colors,
             'tooltip': {
                 'trigger': 'axis',
                 'axisPointer': {
@@ -1088,8 +1120,15 @@ class GraphVisualization:
                     'position': 'inside',
                     'formatter': '{b}',
                     'color': '#FFF',
+                    'fontWeight': 'bold',
+                    'stroke': '#000',
+                    'lineWidth': 2,
                     'textShadowBlur': 2,
                     'textShadowColor': 'rgba(0, 0, 0, 1)'
+                },
+                'itemStyle': {
+                    'borderColor': 'black',
+                    'borderWidth': 1
                 },
                 'force': {
                     'repulsion': 420, # How much nodes push each other away

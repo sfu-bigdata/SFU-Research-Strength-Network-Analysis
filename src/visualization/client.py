@@ -12,7 +12,12 @@ class Client(object):
     def __init__(self):
 
         if not hasattr(self, '_initialized'):
-            URI = environ.get('CONNECTION_URI','bolt://localhost:7687')
+            
+            TARGET_ADDRESS = environ.get('TARGET_ADDRESS', 'localhost')
+            PORT = environ.get('BOLT_PORT', '7687')
+            URI = 'bolt+s://'+TARGET_ADDRESS+':'+PORT
+
+
             USER = environ.get('CONNECTION_USER', '')
             PW = environ.get('CONNECTION_PASSWORD', '')
 

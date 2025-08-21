@@ -264,7 +264,7 @@ class Report():
 
             graph = graph_viz.create_choice_graph(
                 graph_types=[VisualizationType.THEME_RIVER_CHART, VisualizationType.BAR_RACE_CHART, VisualizationType.STACKED_AREA_CHART, VisualizationType.SMOOTHED_LINE_CHART],
-                dataframe=df,
+                dataframe=df.copy(deep=True),
                 data_columns=target_columns,
                 title='Data Over Time'
             )
@@ -277,14 +277,14 @@ class Report():
             u15 = df[df['id'] != SFU_TARGET_INSTITUTION_ID][['year']+target_columns]
             u15 = u15.groupby('year').mean()
 
-            df = df.set_index('id')
+            df = df.set_index(['id', 'display_name'])
             df = pd.concat([df['year'], df[['year']+target_columns].groupby('year').rank(method='first', ascending=False)], axis=1).reset_index()
             sfu_ranked = df[df['id'] == SFU_TARGET_INSTITUTION_ID].set_index('year')
 
             return pn.Column(
                 graph,
                 pn.widgets.Tabulator(
-                    df,
+                    df.drop(columns=['id']),
                     theme='default',
                     pagination='remote',
                     page_size=25,       # Use a cleaner visual theme
@@ -1212,7 +1212,177 @@ class Report():
     
     def appendix_page(self):
         return pn.Column(
+            pn.pane.Markdown(f"""
+            ### Appendix
 
+            The following section will detail the process, including how data was collected, transformed and assessed in order to interpret the OpenAlex data.
+
+            As a general overview the steps of the process can be summarized as:
+            * Data extraction over HTTP using the OpenAlex API.
+            * Cleaning and transforming the extracted data.
+            * Saving the processed data as parquet for graph database ingestion.
+            * Importing the parquet data as nodes and relationships into a Neo4J database.
+            * Performing analysis on the data using Cypher.
+
+            ### Extracting the Data
+
+            OpenAlex presents an API for the retrieval of its constituent data types. For each institution, API client was utilized in conjunction with the corresponding institution ID to extract the following data:
+            * Source objects by host institutions lineage.
+            * Works objects with authorships that include the institution in its institution lineage values.
+            * All works where the target institution has bestowed a grant upon it.
+            * All institutions within the target institution's lineage.
+            * All authors that have the target institution in its affiliation IDs.
+            * A targeted list of 204 journals by ISSN.
+            * Data pertaining to the target institution as funder, if possible.
+
+            The extracted data is then converted into newline delimited JSON format and saved.
+
+            ### Data Cleaning and Transformation
+            The resultant newline delimited JSON data is then loaded into Polars dataframes. Each type of OpenAlex object is loaded into its own LazyFrame. The objects and their corresponding LazyFrame formats are as follows:
+
+            - Institution
+                * id
+                * display_name
+                * works_count
+                * h_index
+                * i10_index
+                * 2yr_mean_citedness
+                * counts_by_year
+                * cited_by_count
+                * lineage_root
+                
+            - Author
+                * id
+                * display_name
+                * cited_by_count
+                * works_count
+                * h_index
+                * i10_index
+                * 2yr_mean_citedness
+
+            - Funder
+                * id
+                * display_name
+                * cited_by_count
+                * country_code
+                * grants_count
+                * works_count
+                * h_index
+                * i10_index
+                * 2yr_mean_citedness
+
+            - Source
+                * id
+                * display_name
+                * country_code
+                * cited_by_count
+                * host_organization
+                * apc_usd
+                * is_core
+                * is_in_doaj
+                * is_oa
+                * works_count
+                * issn_l
+                * h_index
+                * i10_index
+                * 2yr_mean_citedness
+
+            - Work
+                * apc_paid
+                * display_name
+                * citation_normalized_percentile
+                * cited_by_count
+                * countries_distinct_count
+                * fwci
+                * id 
+                * institutions_distinct_count
+                * publication year
+                * type
+                * is_oa
+                * oa_status
+                * issns
+
+            From the above objects, secondary nodes were derived in order to be represent relationships in the graph database. The secondary node types are as follows:
+            * Topic  - Uses OpenAlex topics, each topic is given its own node.
+            * Subfield - Derived from Topics, each topic is part of a subfield.
+            * Field - Derived from Topics, each subfield is part of a field.
+            * Domain - Derived from Topics, each field is part of a domain. 
+            * Affiliated Institution - A dehydrated institutions object. Unlike primary institutions nodes, these nodes do not contain full information relating to an institution, and are introduced only to help map relationships between target institutions and non-target institutions. These nodes are derived from OpenAlex data, including from the affiliated insitutions and authorships fields.
+            * ISSN - A basic node that only uses the ISSN as an ID. This node exists to make it easy to find works affiliated with a target journal.
+            * Authorship - This node is derived from the authorship data found in OpenAlex works objects. An authorship will be related to a work, a target institution, and an author. A single work can have multiple authorships related to it.
+
+            Furthermore to help complete the dataset the following nodes were added to the dataset.
+            * Geographic - Nodes that contain geographic information pertaining to the world's nations. Uses ISO_3166 format.
+            * Year - A basic node that uses the year as an id. This node is used to map relationships that relate to specific years easily, and make it easy to find these relationships in the graph database. 
+
+
+            **Definitions:**
+            - id - Contains the OpenAlex ID.
+            - display_name - The OpenAlex display name.
+            - works_count - The number of works affiliated with this institution.
+            - h_index - Flattened from OpenAlex summary stats.
+            - i10_index - Flattened from OpenAlex summary stats.
+            - 2yr_mean_citedness - Flattened from OpenAlex summary stats.
+            - counts_by_year - The number works produced by this institution in a given year
+            - cited_by_count - The number of citations this institution has received.
+            - lineage_root - Whether or not this object is the absolute root of the lineage tree. Or the base institution.
+            - topic_share - A breakdown of the topics related to this object and their corresponding proportion of the total.
+            - apc_usd - The article processing charge in USD.
+            - host_organization - The organization that hosts the corresponding object.
+            - country_code - An ISO_3166-1_alpha-2 country code corresponding to the country that the object is associated with.
+            - is_core - Whether or not the source is identified as a core source by CWTS.
+            - is_in_doaj - Whether or not the journal is listed in the Directory of Open Access Journals (DOAJ)
+            - is_oa - Whether or not this object is open access.
+            - issn_l - The lineage root of the source ISSN.
+            - citation_normalized_percentile - The percentile of the object's citation count normalized by work type, publication year and subfield.
+            - countries_distinct_count - The distinct number of countries involved with this object.
+            - fwci - Field weighted citation impact.
+            - institutions_distinct_count - The number of distinct institutions involved in this object (ex. number of institutions involved in a work via authorships.)
+            - publication_year - The year that this object was published.
+            - type - The type of pertaining to this object.
+            - oa_status - The open access status of the object. 
+            - issns - A list of ISSNS related to journals that host this object.
+
+            In addition to these nodes, relationship nodes are detailed for later usage in the Graph Database, they are as follows:
+
+            * Affiliated Institution &#8594; Affiliated Institution: Details any connecting lineage between affiliated institutions.
+            * Affiliated Institution &#8594; Geographic: What geographic area the institution is situated in.
+            * Affiliated Institution &#8594; Institution: A relationship helping map target instutitions to their dehydrated variants.
+            * Author &#8594; Authorship: A relationship mapping an authorship to its author
+            * Author &#8594; Affiliated Institution: A relationship mapping an author to their last known institution.
+            * Author &#8594; Topic: A relationship mapping the types of topics an author has been involved in.
+            * Author &#8594; Work: A relationship mapping a produced work to its author.
+            * Author &#8594; Years: A relationship mapping the citations and works count of an author in a given year.
+            * Authorship &#8594; Affiliated Instition: Maps an authorship with an affiliated institution.
+            * Authorship &#8594; Work: Maps an authorship to the work it concerns.
+            * Field &#8594; Domain: What domain the field belongs to.
+            * Funder &#8594; Insitution: Maps the target funder to its target institution counterpart (SFU + U15 only).
+            * Funder &#8594; Year: Gives details on funder actions in a given year.
+            * Publisher &#8594; Source: Maps a source object to its host.
+            * Institution &#8594; Author: Maps authors directly affiliated with the target institution.
+            * Institution &#8594; Funders: Maps a target institution to its funder counterpart.
+            * Institution &#8594; Geographic: What geographic area this insitution is situated in.
+            * Institution &#8594; Publisher: Maps a target institution to its publisher role counterpart if applicable.
+            * Institution &#8594; Institution: Details the lineage of institutions. This relationship exists between parent/child/sibling institutions.
+            * Institution &#8594; Source: Source objects hosted by the institution. (Respositories, journals etc)
+            * Institution &#8594; Topic: The topics an institution has works involving, including their proportion of the total.
+            * Institution &#8594; Year: Contains information relating to actions within a given year (works, citations, etc).
+            * Source &#8594; ISSN: Maps a source object to its ISSN if applicable.
+            * Source &#8594; Topic: Describes the topics a source object contains, including the number of works involving said topic.
+            * Source &#8594; Year: Contains information relating to actions within a given year (works, citations, etc).
+            * Subfield &#8594; Field: The field that the subfield is in.
+            * Topic &#8594;  Subfield: The subfield that the given topic is in.
+            * Work &#8594; ISSN: The ISSN number of the journals that the work is hosted in, if applicable.
+            * Work &#8594; Topic: The topics that a given work involves.
+            * Work &#8594; Work: A relationship describing works referenced by the given work.
+            * Work &#8594; Year: Describes the citations of a work in a given year.
+
+            The resultant LazyFrames detailing the nodes and relationships are saved in Parquet format.
+
+            ### Utilizing the Graph Database
+
+            The parquet data is imported into the Neo4J graph database using the APOC plugin. The data is the grouped and analysed within the database. The data used for data visualization is saved in .csv format locally as running the Cypher queries can take some time. 
+            """)
         )
     
     def _journal_section(self):

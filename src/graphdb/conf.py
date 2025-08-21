@@ -9,10 +9,10 @@ from config import NodeType
 
 DatabaseConfig = SimpleNamespace(
     databaseName = 'neo4j',
-    httpClient = '7474',
-    httpDB = '7474',
-    boltClient = '7687',
-    boltDB = '7687',
+    httpClient = environ.get('HTTP_PORT', '7474'),
+    httpDB = environ.get('HTTP_PORT', '7474'),
+    boltClient = environ.get('BOLT_PORT', '7687'),
+    boltDB = environ.get('BOLT_PORT', '7687'),
     targetAddress = environ.get('TARGET_ADDRESS', '127.0.0.1')
 )
 

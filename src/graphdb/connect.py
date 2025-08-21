@@ -10,12 +10,19 @@ from .conf import GraphType, GraphObject
 class ConnectionType(Enum):
     bolt = 'bolt://'
     neo4j = 'neo4j://'
+    bolt_secure = 'bolt+s://'
+    neo4j_secure = 'neo4j+s://'
+    bolt_ssc = 'bolt+ssc://'
+    neo4j_scc = 'neo4j+ssc://'
 
 class N4J_Connection(object):
 
     def _connect(self):
+        print("Combined address: ", self.combinedAddress)
         try:
-            self._driver = GraphDatabase.driver(self.combinedAddress, auth=(self.username, self.password)) if self.authentication else GraphDatabase.driver(self.combinedAddress)
+            self._driver = GraphDatabase.driver(self.combinedAddress, 
+                                                auth=(self.username, self.password),
+                                                keep_alive=True) if self.authentication else GraphDatabase.driver(self.combinedAddress)
             self._driver.verify_connectivity()
             print(f'Connected to database at address: {self.combinedAddress}')
         except Exception as e:

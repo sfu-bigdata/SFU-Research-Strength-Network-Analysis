@@ -1,3 +1,4 @@
+import math
 import polars as pl
 from neo4j import GraphDatabase, Result
 from .conf import DatabaseConfig, GraphObject
@@ -10,6 +11,7 @@ from config import TableMap, NodeType, DATABASE_OUTPUT_DIR
 from .helpers import infer_node_types_from_file, infer_node_type_from_file, CypherQueryCollection
 from .relationships import Relationships, RelationshipObject, PropertyType, PropertyRelationship
 from typing import Optional
+import pandas as pd
 
 def db_setup(input_directory: Path, 
              output_directory: Path,
@@ -42,7 +44,8 @@ def load_into_db(connection: N4J_Connection,
                  input_dir: Path,
                  load_nodes = True,
                  load_relationships = True,
-                 propertyRelationships : list[PropertyRelationship] = []):
+                 propertyRelationships : list[PropertyRelationship] = [],
+                 remote: bool = False):
     '''
     Load into the database using folder structure to infer the type
     Assumes the structure:
@@ -63,7 +66,8 @@ def load_into_db(connection: N4J_Connection,
         if load_nodes:
             for datatype in types:
                 load_nodes_into_db(connection=connection,
-                                    node_dir=datatype.joinpath('nodes'))
+                                    node_dir=datatype.joinpath('nodes'),
+                                    remote=remote)
 
     top_level = [entry for entry in input_dir.iterdir() if entry.is_dir()]
     
@@ -74,14 +78,16 @@ def load_into_db(connection: N4J_Connection,
             for datatype in types:
                 load_relationships_into_db(connection=connection,
     
-                                            relationship_dir=datatype.joinpath('relationships'))
+                                            relationship_dir=datatype.joinpath('relationships'),
+                                            remote=remote)
             
             for prel in propertyRelationships:
-                load_relationship_property_based(connection, prel.relationship, prel.properties, prel.propertyType)
+                load_relationship_property_based(connection, prel.relationship, prel.properties, prel.propertyType, remote=remote)
 
 
 def load_nodes_into_db(connection: N4J_Connection, 
-                       node_dir: Path
+                       node_dir: Path,
+                       remote: bool = False
                        ):
     
     nodes = node_dir.glob('**/*.parquet')
@@ -92,36 +98,83 @@ def load_nodes_into_db(connection: N4J_Connection,
             raise(f'GraphObjectType not implemented for node type: {nodeType}')
 
         graphObjectType = ObjectNames.get(nodeType)
-        path = node.relative_to(DATABASE_OUTPUT_DIR).as_posix()
-        query = f"""
-        CALL apoc.periodic.iterate(
-        "CALL apoc.load.parquet('file:///{path}') YIELD value as row",
-        "MERGE ({graphObjectType.prefix}:{graphObjectType.name} {{ id: row.id }})
-        SET {graphObjectType.prefix} += row",
-        {{
-            batchSize: 1000,
-            parallel: false,
-            retries: 5
-        }}
-        )
-        """
-        result = connection.execute_cypher_query(query)
-        assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
+        if not remote:
+            path = node.relative_to(DATABASE_OUTPUT_DIR).as_posix()
+            query = f"""
+            CALL apoc.periodic.iterate(
+            "CALL apoc.load.parquet('file:///{path}') YIELD value as row",
+            "MERGE ({graphObjectType.prefix}:{graphObjectType.name} {{ id: row.id }})
+            SET {graphObjectType.prefix} += row",
+            {{
+                batchSize: 1000,
+                parallel: false,
+                retries: 5
+            }}
+            )
+            """
+            result = connection.execute_cypher_query(query)
+            assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
+        else:
+                       
+            def create_nodes_batch(tx, batch):
+                query=f"""
+                UNWIND $batch AS row
+                MERGE ({graphObjectType.prefix}:{graphObjectType.name} {{ id: row.id }})
+                SET {graphObjectType.prefix} += row
+                """
+                tx.run(query, batch=batch)
+            
+
+            df = pd.read_parquet(node)
+            batch_size = 1000
+            batches = [df.iloc[i:i + batch_size].to_dict('records') for i in range(0, len(df), batch_size)]
+
+            with connection._driver.session() as session:
+                for batch in batches:
+                    session.execute_write(create_nodes_batch, batch)
+                                
+
 
 def load_relationship_property_based(connection: N4J_Connection, 
                                     relationship: RelationshipObject,
                                     properties: dict[str, str],
-                                    propertyType: PropertyType):
+                                    propertyType: PropertyType,
+                                    remote: bool = False):
     
     origin, target = relationship.origin_node, relationship.target_node
     origin_node_prefix = origin.prefix+'_ORIGIN_NODE'
     target_node_prefix = target.prefix+'_TARGET_NODE'
 
     if propertyType == PropertyType.ONE_TO_ONE:
-        query = f"""
+        if not remote:
+            query = f"""
+                CALL apoc.periodic.iterate(
+                    "MATCH ({target_node_prefix}: {target.name}) RETURN {target_node_prefix}",
+                    "MATCH ({origin_node_prefix}: {origin.name} {properties})
+                    MERGE ({origin_node_prefix})-[r:{relationship.rel_type}]->({target_node_prefix})", 
+                    {{
+                        batchSize: 1000,
+                        parallel: false,
+                        retries: 5
+                    }}       
+                )
+            """
+        else:
+            query=f"""
+            MATCH ({target_node_prefix}: {target.name}) RETURN {target_node_prefix},
+            MATCH ({origin_node_prefix}: {origin.name} {properties})
+            MERGE ({origin_node_prefix})-[r:{relationship.rel_type}]->({target_node_prefix})
+            """
+            
+
+    elif propertyType == PropertyType.CONTAINED:
+        match = " AND ".join([origin_node_prefix+'.`'+key+'`' + " IN " +target_node_prefix+'.`'+value+'`' for key, value in properties.items()])
+        if not remote:
+            query = f"""
             CALL apoc.periodic.iterate(
                 "MATCH ({target_node_prefix}: {target.name}) RETURN {target_node_prefix}",
-                "MATCH ({origin_node_prefix}: {origin.name} {properties})
+                "MATCH ({origin_node_prefix}: {origin.name})
+                WHERE {match}
                 MERGE ({origin_node_prefix})-[r:{relationship.rel_type}]->({target_node_prefix})", 
                 {{
                     batchSize: 1000,
@@ -129,22 +182,14 @@ def load_relationship_property_based(connection: N4J_Connection,
                     retries: 5
                 }}       
             )
-        """
-    elif propertyType == PropertyType.CONTAINED:
-        match = " AND ".join([origin_node_prefix+'.`'+key+'`' + " IN " +target_node_prefix+'.`'+value+'`' for key, value in properties.items()])
-        query = f"""
-        CALL apoc.periodic.iterate(
-            "MATCH ({target_node_prefix}: {target.name}) RETURN {target_node_prefix}",
-            "MATCH ({origin_node_prefix}: {origin.name})
-            WHERE {match}
-            MERGE ({origin_node_prefix})-[r:{relationship.rel_type}]->({target_node_prefix})", 
-            {{
-                batchSize: 1000,
-                parallel: false,
-                retries: 5
-            }}       
-        )
-        """
+            """
+        else:
+            query=f"""
+                MATCH ({target_node_prefix}: {target.name}) RETURN {target_node_prefix}",
+                "MATCH ({origin_node_prefix}: {origin.name})
+                WHERE {match}
+                MERGE ({origin_node_prefix})-[r:{relationship.rel_type}]->({target_node_prefix})
+            """
     else:
         raise Exception('Property Type not implemented for: ', propertyType)
 
@@ -152,7 +197,9 @@ def load_relationship_property_based(connection: N4J_Connection,
     assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
 
 
-def load_relationships_into_db(connection: N4J_Connection, relationship_dir: Path):
+def load_relationships_into_db(connection: N4J_Connection, 
+                               relationship_dir: Path,
+                               remote: bool = False):
     files = relationship_dir.glob('**/*.parquet')
 
     RelationshipsGen = Relationships()
@@ -166,36 +213,78 @@ def load_relationships_into_db(connection: N4J_Connection, relationship_dir: Pat
         origin_node_prefix = relationshipObj.origin_node.prefix+'_ORIGIN_NODE'
         target_node_prefix = relationshipObj.target_node.prefix+'_TARGET_NODE'
 
-        query = f"""
-        CALL apoc.periodic.iterate(
-            "CALL apoc.load.parquet ('file:///{path}') YIELD value AS ROW",
-            "
-                WITH ROW,
-                    ROW.`{relationshipObj.origin_id}` AS origin_id,
-                    ROW.`{relationshipObj.target_id}` AS target_id,
-                    apoc.map.clean(ROW, [\\"{relationshipObj.origin_id}\\", \\"{relationshipObj.target_id}\\"], []) as properties
+        if not remote:
+
+            query = f"""
+            CALL apoc.periodic.iterate(
+                "CALL apoc.load.parquet ('file:///{path}') YIELD value AS ROW",
+                "
+                    WITH ROW,
+                        ROW.`{relationshipObj.origin_id}` AS origin_id,
+                        ROW.`{relationshipObj.target_id}` AS target_id,
+                        apoc.map.clean(ROW, [\\"{relationshipObj.origin_id}\\", \\"{relationshipObj.target_id}\\"], []) as properties
+                    
+                    MATCH ({origin_node_prefix}: {relationshipObj.origin_node.name} {{id: origin_id}})
+                    MATCH ({target_node_prefix}: {relationshipObj.target_node.name} {{id: target_id}})
+                    MERGE ({origin_node_prefix})-[r:{relationshipObj.rel_type}]->({target_node_prefix})
+                    ON CREATE SET r = properties
+                    ON MATCH SET r += properties
+                ",
+                {{
+                    batchSize: 1000,
+                    parallel: false,
+                    retries: 5
+                }}
+            )
+            """
+            result = connection.execute_cypher_query(query)
+            assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
+        
+        else:
+            query = f"""
+            UNWIND $rows AS ROW
+            MATCH ({origin_node_prefix}: {relationshipObj.origin_node.name} {{id: ROW.origin_id}})
+            MATCH ({target_node_prefix}: {relationshipObj.target_node.name} {{id: ROW.target_id}})
+            MERGE ({origin_node_prefix})-[r:{relationshipObj.rel_type}]->({target_node_prefix})
+            ON CREATE SET r = ROW.properties
+            ON MATCH SET r += ROW.properties
+            """
+
+            df = pd.read_parquet(file)
+
+            origin_id_col = relationshipObj.origin_id
+            target_id_col = relationshipObj.target_id
+
+            prop_cols = [col for col in df.columns if col not in [origin_id_col, target_id_col]]
+
+            batch = []
+            batch_size = 1000
+
+            for _, row in df.iterrows():
+                properties = row[prop_cols].to_dict()
+
+                row_data = {
+                    "origin_id": row[origin_id_col],
+                    "target_id": row[target_id_col],
+                    "properties": properties
+                }
+                batch.append(row_data)
+
+                if len(batch) >= batch_size:
+                    with connection._driver.session() as session:
+                        session.run(query, rows=batch)
+                    batch = []
                 
-                MATCH ({origin_node_prefix}: {relationshipObj.origin_node.name} {{id: origin_id}})
-                MATCH ({target_node_prefix}: {relationshipObj.target_node.name} {{id: target_id}})
-                MERGE ({origin_node_prefix})-[r:{relationshipObj.rel_type}]->({target_node_prefix})
-                ON CREATE SET r = properties
-                ON MATCH SET r += properties
-            ",
-            {{
-                batchSize: 1000,
-                parallel: false,
-                retries: 5
-            }}
-        )
-        """
-        result = connection.execute_cypher_query(query)
-        assert result._metadata.get('statuses')[0].get('status_description') == 'note: successful completion'
+            if batch:
+                with connection._driver.session() as session:
+                        session.run(query, rows=batch)
 
 def setup_full(connection: N4J_Connection,
                 clear_previous_contents: bool,
                 node_constraints: Optional[dict[GraphObject, dict[str, str]]] = None,
                 relationship_constraints: Optional[dict[tuple[GraphObject, GraphObject], dict[set[str], str]]] = None,
-                indexes: Optional[dict[GraphObject, set[str]]]= None
+                indexes: Optional[dict[GraphObject, set[str]]]= None,
+                remote: bool = False
                ):
 
     if clear_previous_contents:
@@ -234,4 +323,4 @@ def setup_full(connection: N4J_Connection,
             connection.create_indexes(GraphObject.name, GraphObject.prefix, set(['id']), GraphType.NODE)
 
     # Load nodes into DB
-    load_into_db(connection=connection, input_dir=DATABASE_OUTPUT_DIR)
+    load_into_db(connection=connection, input_dir=DATABASE_OUTPUT_DIR, remote=remote)

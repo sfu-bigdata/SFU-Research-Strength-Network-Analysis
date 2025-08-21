@@ -76,7 +76,7 @@ def display_report(
             )
     if (save):
         from config import BASE_DIR
-        template.save(BASE_DIR.joinpath('report.html'))
+        template.save(BASE_DIR.joinpath('report.html'),embed=True)
 
     pn.serve(template)
 
